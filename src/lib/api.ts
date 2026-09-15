@@ -1,0 +1,368 @@
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8080";
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://127.0.0.1:8080";
+
+const ACCESS_KEY = "neardy_access_token";
+const REFRESH_KEY = "neardy_refresh_token";
+
+export function getAccessToken() {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(ACCESS_KEY);
+}
+
+export function getRefreshToken() {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(REFRESH_KEY);
+}
+
+export function setTokens(access: string, refresh: string) {
+  localStorage.setItem(ACCESS_KEY, access);
+  localStorage.setItem(REFRESH_KEY, refresh);
+}
+
+export function clearTokens() {
+  localStorage.removeItem(ACCESS_KEY);
+  localStorage.removeItem(REFRESH_KEY);
+}
+
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+async function refreshAccess(): Promise<string | null> {
+  const refresh = getRefreshToken();
+  if (!refresh) return null;
+  const res = await fetch(`${API_URL}/v1/auth/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token: refresh }),
+  });
+  if (!res.ok) {
+    clearTokens();
+    return null;
+  }
+  const json = await res.json();
+  setTokens(json.data.access_token, json.data.refresh_token);
+  return json.data.access_token as string;
+}
+
+export async function api<T>(
+  path: string,
+  options: RequestInit & { auth?: boolean } = {},
+): Promise<T> {
+  const headers = new Headers(options.headers || {});
+  if (!headers.has("Content-Type") && options.body) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (options.auth !== false) {
+    const token = getAccessToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  let res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  if (res.status === 401 && options.auth !== false) {
+    const next = await refreshAccess();
+    if (next) {
+      headers.set("Authorization", `Bearer ${next}`);
+      res = await fetch(`${API_URL}${path}`, { ...options, headers });
+    }
+  }
+
+  const text = await res.text();
+  const json = text ? JSON.parse(text) : {};
+  if (!res.ok) {
+    throw new ApiError(res.status, json.error || res.statusText || "request failed");
+  }
+  return json.data as T;
+}
+
+export const authApi = {
+  register: (body: { email: string; password: string; display_name: string }) =>
+    api<{ access_token: string; refresh_token: string; user_id: string; expires_in: number }>(
+      "/v1/auth/register",
+      { method: "POST", body: JSON.stringify(body), auth: false },
+    ),
+  login: (body: { email: string; password: string }) =>
+    api<{ access_token: string; refresh_token: string; user_id: string; expires_in: number }>(
+      "/v1/auth/login",
+      { method: "POST", body: JSON.stringify(body), auth: false },
+    ),
+  logout: async () => {
+    const refresh = getRefreshToken();
+    try {
+      if (refresh) {
+        await api("/v1/auth/logout", {
+          method: "POST",
+          body: JSON.stringify({ refresh_token: refresh }),
+          auth: false,
+        });
+      }
+    } finally {
+      clearTokens();
+    }
+  },
+};
+
+export type MeProfile = {
+  id: string;
+  email: string;
+  display_name: string;
+  bio: string | null;
+  birth_date?: string;
+  age?: number;
+  gender: string | null;
+  looking_for: string[];
+  location?: { lat: number; lng: number };
+  onboarding_completed: boolean;
+  photos: { id: string; url: string; is_primary: boolean }[];
+};
+
+export const meApi = {
+  get: () => api<MeProfile>("/v1/me"),
+  patch: (body: Record<string, unknown>) =>
+    api<MeProfile>("/v1/me", { method: "PATCH", body: JSON.stringify(body) }),
+  setLocation: (lat: number, lng: number) =>
+    api("/v1/me/location", { method: "PATCH", body: JSON.stringify({ lat, lng }) }),
+};
+
+export const nearbyApi = {
+  list: (filters?: {
+    min_age?: number;
+    max_age?: number;
+    max_distance_km?: number;
+    gender?: string;
+  }) => {
+    const q = new URLSearchParams({ page: "0", limit: "50" });
+    if (filters?.min_age && filters.min_age > 0) q.set("min_age", String(filters.min_age));
+    if (filters?.max_age && filters.max_age > 0) q.set("max_age", String(filters.max_age));
+    if (filters?.max_distance_km && filters.max_distance_km > 0) {
+      q.set("max_distance_km", String(filters.max_distance_km));
+    }
+    if (filters?.gender) q.set("gender", filters.gender);
+    return api<{
+      users: {
+        id: string;
+        display_name: string;
+        bio: string | null;
+        gender: string | null;
+        age: number | null;
+        distance_km: number;
+        primary_photo: string | null;
+      }[];
+    }>(`/v1/nearby?${q.toString()}`);
+  },
+};
+
+export const likesApi = {
+  like: (
+    userId: string,
+    kind: "like" | "pass" = "like",
+    opts?: { message?: string; hide_activity?: boolean },
+  ) =>
+    api<{ matched: boolean; match_id?: string; conversation_id?: string }>("/v1/likes", {
+      method: "POST",
+      body: JSON.stringify({
+        user_id: userId,
+        kind,
+        message: opts?.message || "",
+        hide_activity: !!opts?.hide_activity,
+      }),
+    }),
+  matches: () =>
+    api<{
+      matches: {
+        match_id: string;
+        conversation_id: string;
+        user_id: string;
+        display_name: string;
+        primary_photo: string | null;
+        created_at: string;
+        unread_count: number;
+        last_message?: string | null;
+        last_message_at?: string | null;
+        last_message_type?: string | null;
+      }[];
+    }>("/v1/matches"),
+  messages: (conversationId: string) =>
+    api<{
+      messages: {
+        id: string;
+        sender_id: string;
+        type: string;
+        body: string | null;
+        media_url: string | null;
+        created_at: string;
+        deleted_at?: string | null;
+        recalled?: boolean;
+      }[];
+      peer_last_read_at?: string | null;
+    }>(`/v1/conversations/${conversationId}/messages?limit=100`),
+};
+
+export type FriendRequestItem = {
+  id: string;
+  user_id: string;
+  display_name: string;
+  primary_photo: string | null;
+  message: string;
+  hide_activity: boolean;
+  direction: "received" | "sent";
+  created_at: string;
+};
+
+export const friendRequestsApi = {
+  list: () =>
+    api<{
+      received: FriendRequestItem[];
+      sent: FriendRequestItem[];
+      received_count: number;
+      sent_count: number;
+    }>("/v1/friend-requests"),
+  create: (body: { user_id: string; message: string; hide_activity?: boolean }) =>
+    api<{
+      request_id: string;
+      auto_accepted?: boolean;
+      conversation_id?: string;
+      match_id?: string;
+    }>("/v1/friend-requests", { method: "POST", body: JSON.stringify(body) }),
+  accept: (id: string) =>
+    api<{ match_id: string; conversation_id: string }>(`/v1/friend-requests/${id}/accept`, {
+      method: "POST",
+    }),
+  reject: (id: string) => api(`/v1/friend-requests/${id}/reject`, { method: "POST" }),
+  cancel: (id: string) => api(`/v1/friend-requests/${id}/cancel`, { method: "POST" }),
+};
+
+export const feedApi = {
+  list: () =>
+    api<{
+      posts: {
+        id: string;
+        body: string;
+        created_at: string;
+        user_id: string;
+        display_name: string;
+        primary_photo: string | null;
+        media: { id: string; type: string; url: string }[];
+        like_count: number;
+        comment_count: number;
+        liked_by_me: boolean;
+      }[];
+    }>("/v1/feed?page=0&limit=30"),
+  create: (
+    body: string,
+    media: { type: "image" | "video"; url: string; sort_order: number }[] = [],
+  ) =>
+    api("/v1/posts", {
+      method: "POST",
+      body: JSON.stringify({ body, media }),
+    }),
+  like: (id: string) => api<{ liked: boolean }>(`/v1/posts/${id}/likes`, { method: "POST" }),
+  comments: (id: string) =>
+    api<{
+      comments: {
+        id: string;
+        body: string;
+        created_at: string;
+        user_id: string;
+        display_name: string;
+        parent_id?: string | null;
+        media_url?: string | null;
+        like_count: number;
+        liked_by_me: boolean;
+        replies?: {
+          id: string;
+          body: string;
+          created_at: string;
+          user_id: string;
+          display_name: string;
+          parent_id?: string | null;
+          media_url?: string | null;
+          like_count: number;
+          liked_by_me: boolean;
+        }[];
+      }[];
+      count: number;
+    }>(`/v1/posts/${id}/comments?page=0&limit=200`),
+  comment: (
+    id: string,
+    payload: { body?: string; parent_id?: string; media_url?: string },
+  ) =>
+    api<{
+      id: string;
+      body: string;
+      created_at: string;
+      user_id: string;
+      display_name: string;
+      parent_id?: string | null;
+      media_url?: string | null;
+      like_count: number;
+      liked_by_me: boolean;
+    }>(`/v1/posts/${id}/comments`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  likeComment: (commentId: string) =>
+    api<{ liked: boolean }>(`/v1/comments/${commentId}/likes`, { method: "POST" }),
+};
+
+export const usersApi = {
+  get: (id: string) => api<MeProfile>(`/v1/users/${id}`),
+};
+
+export const uploadsApi = {
+  /** Upload via API → Cloudflare R2 (multipart). */
+  file: async (file: File, kind: "image" | "video") => {
+    const form = new FormData();
+    form.append("kind", kind);
+    form.append("file", file);
+    const token = getAccessToken();
+    const res = await fetch(`${API_URL}/v1/uploads/file`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      throw new ApiError(res.status, json.error || "upload failed");
+    }
+    return json.data as { public_url: string; key: string; mode: string };
+  },
+
+  /** Direct browser → R2 via presigned PUT (needs R2 bucket CORS). */
+  presignAndPut: async (file: File, kind: "image" | "video") => {
+    const meta = await api<{
+      upload_url: string;
+      public_url: string;
+      key: string;
+      mode: string;
+    }>("/v1/uploads", {
+      method: "POST",
+      body: JSON.stringify({
+        kind,
+        filename: file.name,
+        content_type: file.type || "application/octet-stream",
+        content_length: file.size,
+      }),
+    });
+    const put = await fetch(meta.upload_url, {
+      method: "PUT",
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+    });
+    if (!put.ok) {
+      throw new ApiError(put.status, "R2 PUT failed");
+    }
+    return { public_url: meta.public_url, key: meta.key, mode: meta.mode };
+  },
+};
+
+export function wsUrl() {
+  const token = getAccessToken();
+  return `${WS_URL}/v1/ws?token=${encodeURIComponent(token || "")}`;
+}
+
+export { API_URL };

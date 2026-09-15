@@ -1,26 +1,109 @@
+@import url("https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap");
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: #0a0c14;
+  --color-foreground: #e8eaf2;
+  --color-card: #111320;
+  --color-card-foreground: #e8eaf2;
+  --color-primary: #6c63ff;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #1a1d2e;
+  --color-secondary-foreground: #a0a8c8;
+  --color-muted: #1a1d2e;
+  --color-muted-foreground: #6b74a0;
+  --color-accent: #00e5ff;
+  --color-accent-foreground: #0a0c14;
+  --color-border: #1e2240;
+  --color-ring: #6c63ff;
+  --radius: 1rem;
+  --font-sans: "Nunito", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  display: none;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Nunito", sans-serif;
+  background-color: #0a0c14;
+  color: #e8eaf2;
+}
+
+@keyframes ping-slow {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(3.5);
+    opacity: 0;
+  }
+}
+@keyframes ping-mid {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+}
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+@keyframes slide-up {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.ping-ring-1 {
+  animation: ping-slow 2.5s ease-out infinite;
+}
+.ping-ring-2 {
+  animation: ping-mid 2.5s ease-out infinite 0.5s;
+}
+.pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+.slide-up {
+  animation: slide-up 0.4s ease forwards;
+}
+.card-hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  background-color: #161929;
+  box-shadow: 0 8px 32px rgba(108, 99, 255, 0.15);
+}
+.skeleton {
+  background: linear-gradient(90deg, #1a1d2e 25%, #22273d 50%, #1a1d2e 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
 }
