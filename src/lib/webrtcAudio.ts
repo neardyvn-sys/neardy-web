@@ -1,6 +1,10 @@
-/** Browser WebRTC 1-to-1 audio session (no video). */
+/** Browser WebRTC 1-to-1 media session (audio or audio+video). */
 
-import { classifyMicError, isMicSupported } from "@/lib/microphone";
+import {
+  classifyMediaError,
+  isMediaSupported,
+  mediaErrorToCode,
+} from "@/lib/microphone";
 
 export type IceCandidatePayload = {
   candidate: string;
@@ -9,14 +13,22 @@ export type IceCandidatePayload = {
   usernameFragment?: string | null;
 };
 
-export type AudioCallSessionCallbacks = {
+export type MediaCallSessionCallbacks = {
   onIceCandidate: (candidate: IceCandidatePayload) => void;
+  onLocalStream: (stream: MediaStream | null) => void;
   onRemoteStream: (stream: MediaStream | null) => void;
   onConnectionState: (state: RTCPeerConnectionState) => void;
   onError: (message: string) => void;
 };
 
-export class AudioCallSession {
+/** @deprecated use MediaCallSessionCallbacks */
+export type AudioCallSessionCallbacks = MediaCallSessionCallbacks;
+
+export type MediaCallStartOptions = {
+  withVideo?: boolean;
+};
+
+export class MediaCallSession {
   private pc: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
   private remoteStream: MediaStream | null = null;
@@ -24,9 +36,11 @@ export class AudioCallSession {
   private remoteDescSet = false;
   private closed = false;
   private muted = false;
-  private readonly cbs: AudioCallSessionCallbacks;
+  private cameraOff = false;
+  private withVideo = false;
+  private readonly cbs: MediaCallSessionCallbacks;
 
-  constructor(cbs: AudioCallSessionCallbacks) {
+  constructor(cbs: MediaCallSessionCallbacks) {
     this.cbs = cbs;
   }
 
@@ -34,36 +48,56 @@ export class AudioCallSession {
     return this.muted;
   }
 
-  async start(iceServers: RTCIceServer[]): Promise<void> {
+  get isCameraOff() {
+    return this.cameraOff;
+  }
+
+  getLocalStream() {
+    return this.localStream;
+  }
+
+  async start(iceServers: RTCIceServer[], options: MediaCallStartOptions = {}): Promise<void> {
     if (this.closed) return;
 
-    if (!isMicSupported()) {
-      throw new Error("microphone_insecure_context");
+    this.withVideo = !!options.withVideo;
+
+    if (!isMediaSupported()) {
+      throw new Error(mediaErrorToCode("insecure_context", this.withVideo));
     }
 
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia({
         audio: true,
-        video: false,
+        video: this.withVideo
+          ? {
+              facingMode: "user",
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            }
+          : false,
       });
     } catch (err) {
-      const kind = classifyMicError(err);
-      if (kind === "permission_denied") throw new Error("microphone_permission_denied");
-      if (kind === "insecure_context") throw new Error("microphone_insecure_context");
-      if (kind === "no_device") throw new Error("microphone_no_device");
-      throw new Error("microphone_unavailable");
+      throw new Error(mediaErrorToCode(classifyMediaError(err), this.withVideo));
     }
 
     if (this.closed) {
       this.stopLocalTracks();
+      this.cbs.onLocalStream(null);
       return;
     }
+
+    for (const track of this.localStream.getAudioTracks()) {
+      track.enabled = !this.muted;
+    }
+    for (const track of this.localStream.getVideoTracks()) {
+      track.enabled = !this.cameraOff;
+    }
+    this.cbs.onLocalStream(this.localStream);
 
     const pc = new RTCPeerConnection({ iceServers });
     this.pc = pc;
 
-    for (const track of this.localStream.getAudioTracks()) {
-      track.enabled = !this.muted;
+    for (const track of this.localStream.getTracks()) {
       pc.addTrack(track, this.localStream);
     }
 
@@ -79,8 +113,24 @@ export class AudioCallSession {
 
     pc.ontrack = (ev) => {
       if (this.closed) return;
-      const stream = ev.streams[0] ?? new MediaStream([ev.track]);
-      this.remoteStream = stream;
+      let stream = this.remoteStream;
+      if (!stream) {
+        stream = ev.streams[0] ? new MediaStream(ev.streams[0].getTracks()) : new MediaStream();
+        this.remoteStream = stream;
+      }
+      if (!stream.getTracks().some((t) => t.id === ev.track.id)) {
+        stream.addTrack(ev.track);
+      }
+      ev.track.onended = () => {
+        if (!this.remoteStream) return;
+        this.remoteStream.removeTrack(ev.track);
+        if (this.remoteStream.getTracks().length === 0) {
+          this.remoteStream = null;
+          this.cbs.onRemoteStream(null);
+        } else {
+          this.cbs.onRemoteStream(this.remoteStream);
+        }
+      };
       this.cbs.onRemoteStream(stream);
     };
 
@@ -147,6 +197,14 @@ export class AudioCallSession {
     }
   }
 
+  setCameraEnabled(enabled: boolean) {
+    this.cameraOff = !enabled;
+    if (!this.localStream) return;
+    for (const track of this.localStream.getVideoTracks()) {
+      track.enabled = enabled;
+    }
+  }
+
   cleanup() {
     if (this.closed) return;
     this.closed = true;
@@ -159,6 +217,13 @@ export class AudioCallSession {
       this.pc.onconnectionstatechange = null;
       this.pc.oniceconnectionstatechange = null;
       try {
+        this.pc.getSenders().forEach((sender) => {
+          try {
+            this.pc?.removeTrack(sender);
+          } catch {
+            // ignore
+          }
+        });
         this.pc.close();
       } catch {
         // ignore
@@ -168,6 +233,7 @@ export class AudioCallSession {
 
     this.stopLocalTracks();
     this.localStream = null;
+    this.cbs.onLocalStream(null);
 
     if (this.remoteStream) {
       for (const track of this.remoteStream.getTracks()) {
@@ -197,3 +263,6 @@ export class AudioCallSession {
     }
   }
 }
+
+/** @deprecated use MediaCallSession */
+export const AudioCallSession = MediaCallSession;

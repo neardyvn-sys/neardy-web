@@ -1,8 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import Avatar from "@/components/ui/Avatar";
-import type { MicErrorKind } from "@/lib/microphone";
+import type { MediaErrorKind } from "@/lib/microphone";
 import type { CallPeer, CallPhase, CallRole, CallType } from "@/lib/types";
 
 const RING_SECONDS = 30;
@@ -51,15 +51,17 @@ function ActionButton({
 }: {
   label: string;
   onClick: () => void;
-  variant: "accept" | "reject" | "neutral";
+  variant: "accept" | "reject" | "neutral" | "muted";
   icon: ReactNode;
 }) {
   const styles =
     variant === "accept"
-      ? { bg: "linear-gradient(135deg, #22c55e, #16a34a)", shadow: "0 8px 24px rgba(34,197,94,0.35)" }
+      ? { bg: "linear-gradient(135deg, #22c55e, #16a34a)", shadow: "0 8px 24px rgba(34,197,94,0.35)", color: "#fff" }
       : variant === "reject"
-        ? { bg: "linear-gradient(135deg, #ef4444, #dc2626)", shadow: "0 8px 24px rgba(239,68,68,0.35)" }
-        : { bg: "#1a1d2e", shadow: "none" };
+        ? { bg: "linear-gradient(135deg, #ef4444, #dc2626)", shadow: "0 8px 24px rgba(239,68,68,0.35)", color: "#fff" }
+        : variant === "muted"
+          ? { bg: "#f87171", shadow: "none", color: "#fff" }
+          : { bg: "#1a1d2e", shadow: "none", color: "#fff" };
 
   return (
     <button
@@ -70,7 +72,7 @@ function ActionButton({
     >
       <span
         className="w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-transform group-active:scale-95"
-        style={{ background: styles.bg, boxShadow: styles.shadow, color: "#fff" }}
+        style={{ background: styles.bg, boxShadow: styles.shadow, color: styles.color }}
       >
         {icon}
       </span>
@@ -81,18 +83,20 @@ function ActionButton({
   );
 }
 
-function MicPermissionPanel({
+function MediaPermissionPanel({
   title,
   steps,
   onRetry,
   onEnd,
   endLabel = "Kết thúc",
+  retryLabel = "Cho phép thiết bị",
 }: {
   title: string;
   steps: string[];
   onRetry: () => void;
   onEnd: () => void;
   endLabel?: string;
+  retryLabel?: string;
 }) {
   return (
     <div
@@ -150,7 +154,7 @@ function MicPermissionPanel({
             boxShadow: "0 4px 16px rgba(108,99,255,0.3)",
           }}
         >
-          Cho phép microphone
+          {retryLabel}
         </button>
         <button
           type="button"
@@ -165,6 +169,134 @@ function MicPermissionPanel({
   );
 }
 
+function VideoStage({
+  localStream,
+  remoteStream,
+  peer,
+  cameraOff,
+  muted,
+  statusText,
+}: {
+  localStream: MediaStream | null;
+  remoteStream: MediaStream | null;
+  peer: CallPeer;
+  cameraOff: boolean;
+  muted: boolean;
+  statusText: string;
+}) {
+  const remoteRef = useRef<HTMLVideoElement>(null);
+  const localRef = useRef<HTMLVideoElement>(null);
+  const hasRemoteVideo = !!remoteStream?.getVideoTracks().some((t) => t.readyState === "live");
+  const remoteVideoEnabled = !!remoteStream?.getVideoTracks().some((t) => t.enabled && t.readyState === "live");
+
+  useEffect(() => {
+    const el = remoteRef.current;
+    if (!el) return;
+    el.srcObject = remoteStream;
+    if (remoteStream) void el.play().catch(() => {});
+  }, [remoteStream]);
+
+  useEffect(() => {
+    const el = localRef.current;
+    if (!el) return;
+    el.srcObject = localStream;
+    if (localStream) void el.play().catch(() => {});
+  }, [localStream]);
+
+  return (
+    <div
+      className="relative w-full overflow-hidden rounded-2xl"
+      style={{
+        backgroundColor: "#05070e",
+        border: "1px solid #1e2240",
+        aspectRatio: "9 / 16",
+        maxHeight: "min(62vh, 520px)",
+      }}
+    >
+      <video
+        ref={remoteRef}
+        autoPlay
+        playsInline
+        className="absolute inset-0 h-full w-full object-cover"
+        style={{ opacity: remoteVideoEnabled ? 1 : 0 }}
+      />
+
+      {!remoteVideoEnabled && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-4">
+          <Avatar
+            initials={peer.avatar}
+            userId={peer.id}
+            size="xl"
+            photoUrl={peer.photoUrl}
+          />
+          <p className="text-sm font-medium" style={{ color: "#a0a8c8" }}>
+            {hasRemoteVideo ? "Đối phương đã tắt camera" : "Đang chờ video…"}
+          </p>
+        </div>
+      )}
+
+      <div
+        className="absolute left-3 top-3 rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums"
+        style={{ backgroundColor: "rgba(0,0,0,0.55)", color: "#e8eaf2" }}
+      >
+        {statusText}
+      </div>
+
+      {(muted || cameraOff) && (
+        <div className="absolute right-3 top-3 flex gap-1.5">
+          {muted && (
+            <span
+              className="rounded-full px-2 py-1 text-[10px] font-semibold"
+              style={{ backgroundColor: "rgba(239,68,68,0.85)", color: "#fff" }}
+            >
+              Mic tắt
+            </span>
+          )}
+          {cameraOff && (
+            <span
+              className="rounded-full px-2 py-1 text-[10px] font-semibold"
+              style={{ backgroundColor: "rgba(0,0,0,0.55)", color: "#e8eaf2" }}
+            >
+              Cam tắt
+            </span>
+          )}
+        </div>
+      )}
+
+      <div
+        className="absolute bottom-3 right-3 overflow-hidden rounded-xl shadow-lg"
+        style={{
+          width: "28%",
+          maxWidth: 140,
+          aspectRatio: "3 / 4",
+          backgroundColor: "#111320",
+          border: "1px solid #2a3050",
+        }}
+      >
+        <video
+          ref={localRef}
+          autoPlay
+          playsInline
+          muted
+          className="h-full w-full object-cover"
+          style={{
+            transform: "scaleX(-1)",
+            opacity: localStream && !cameraOff ? 1 : 0,
+          }}
+        />
+        {(!localStream || cameraOff) && (
+          <div
+            className="absolute inset-0 flex items-center justify-center text-[10px]"
+            style={{ color: "#6b74a0" }}
+          >
+            {cameraOff ? "Cam tắt" : "Bạn"}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function CallOverlay({
   phase,
   role: _role,
@@ -172,16 +304,20 @@ export default function CallOverlay({
   peer,
   elapsedSec,
   muted = false,
+  cameraOff = false,
   connStatus = "idle",
-  micError = null,
-  micErrorMessage = null,
-  micPermissionSteps = [],
+  localStream = null,
+  remoteStream = null,
+  mediaError = null,
+  mediaErrorMessage = null,
+  mediaPermissionSteps = [],
   onAccept,
   onReject,
   onCancel,
   onEnd,
   onToggleMute,
-  onRetryMic,
+  onToggleCamera,
+  onRetryMedia,
 }: {
   phase: CallPhase;
   role: CallRole | null;
@@ -189,24 +325,30 @@ export default function CallOverlay({
   peer: CallPeer;
   elapsedSec: number;
   muted?: boolean;
+  cameraOff?: boolean;
   connStatus?: "idle" | "connecting" | "connected" | "failed";
-  micError?: MicErrorKind | null;
-  micErrorMessage?: string | null;
-  micPermissionSteps?: string[];
+  localStream?: MediaStream | null;
+  remoteStream?: MediaStream | null;
+  mediaError?: MediaErrorKind | null;
+  mediaErrorMessage?: string | null;
+  mediaPermissionSteps?: string[];
   onAccept: () => void;
   onReject: () => void;
   onCancel: () => void;
   onEnd: () => void;
   onToggleMute?: () => void;
-  onRetryMic?: () => void;
+  onToggleCamera?: () => void;
+  onRetryMedia?: () => void;
 }) {
   const ringing = phase === "outgoing" || phase === "incoming";
   const remaining = Math.max(0, RING_SECONDS - elapsedSec);
-  const showMicPanel = !!micError && micErrorMessage;
+  const showMediaPanel = !!mediaError && mediaErrorMessage;
+  const isVideo = callType === "video";
+  const showVideoStage = isVideo && phase === "active" && !showMediaPanel;
 
   const statusText =
-    showMicPanel
-      ? micErrorMessage
+    showMediaPanel
+      ? mediaErrorMessage
       : phase === "outgoing"
         ? "Đang gọi…"
         : phase === "incoming"
@@ -215,19 +357,29 @@ export default function CallOverlay({
             ? formatDuration(elapsedSec)
             : connStatus === "failed"
               ? "Kết nối thất bại"
-              : "Đang kết nối âm thanh…";
+              : isVideo
+                ? "Đang kết nối video…"
+                : "Đang kết nối âm thanh…";
 
   const subtitle =
-    showMicPanel
+    showMediaPanel
       ? null
       : phase === "active"
-        ? muted
-          ? "Micro đang tắt"
-          : connStatus === "connected"
-            ? "Âm thanh đang hoạt động"
-            : "Thiết lập WebRTC…"
+        ? muted && cameraOff && isVideo
+          ? "Mic và camera đang tắt"
+          : muted
+            ? "Micro đang tắt"
+            : cameraOff && isVideo
+              ? "Camera đang tắt"
+              : connStatus === "connected"
+                ? isVideo
+                  ? "Video đang hoạt động"
+                  : "Âm thanh đang hoạt động"
+                : "Thiết lập WebRTC…"
         : phase === "incoming"
-          ? "Khi chấp nhận, trình duyệt sẽ hỏi quyền microphone"
+          ? isVideo
+            ? "Khi chấp nhận, trình duyệt sẽ hỏi quyền camera và microphone"
+            : "Khi chấp nhận, trình duyệt sẽ hỏi quyền microphone"
           : ringing
             ? `Tự động kết thúc sau ${remaining}s`
             : "";
@@ -249,58 +401,76 @@ export default function CallOverlay({
         }}
       >
         <div className="flex flex-col items-center text-center w-full">
-          <div className="relative mb-6">
-            {(ringing || (phase === "active" && connStatus === "connecting" && !showMicPanel)) && (
-              <>
-                <span
-                  className="absolute inset-0 rounded-full animate-ping opacity-20"
-                  style={{ backgroundColor: "#6c63ff", margin: "-12px" }}
-                />
-                <span
-                  className="absolute inset-0 rounded-full animate-pulse opacity-30"
-                  style={{ backgroundColor: "#6c63ff", margin: "-6px" }}
-                />
-              </>
-            )}
-            <Avatar
-              initials={peer.avatar}
-              userId={peer.id}
-              size="xl"
-              photoUrl={peer.photoUrl}
-              className="relative z-10"
-            />
-          </div>
+          {!showVideoStage && (
+            <div className="relative mb-6">
+              {(ringing || (phase === "active" && connStatus === "connecting" && !showMediaPanel)) && (
+                <>
+                  <span
+                    className="absolute inset-0 rounded-full animate-ping opacity-20"
+                    style={{ backgroundColor: "#6c63ff", margin: "-12px" }}
+                  />
+                  <span
+                    className="absolute inset-0 rounded-full animate-pulse opacity-30"
+                    style={{ backgroundColor: "#6c63ff", margin: "-6px" }}
+                  />
+                </>
+              )}
+              <Avatar
+                initials={peer.avatar}
+                userId={peer.id}
+                size="xl"
+                photoUrl={peer.photoUrl}
+                className="relative z-10"
+              />
+            </div>
+          )}
 
           <h2 className="text-xl sm:text-2xl font-bold mb-2 truncate max-w-full px-2" style={{ color: "#e8eaf2" }}>
             {peer.name}
           </h2>
 
-          <p
-            className={`text-sm mb-3 tabular-nums px-2 ${showMicPanel ? "text-[#fca5a5] font-medium" : ""}`}
-            style={{ color: showMicPanel ? undefined : "#6b74a0" }}
-          >
-            {statusText}
-          </p>
+          {!showVideoStage && (
+            <p
+              className={`text-sm mb-3 tabular-nums px-2 ${showMediaPanel ? "text-[#fca5a5] font-medium" : ""}`}
+              style={{ color: showMediaPanel ? undefined : "#6b74a0" }}
+            >
+              {statusText}
+            </p>
+          )}
 
-          {!showMicPanel && <CallTypeBadge callType={callType === "video" ? "audio" : callType} />}
+          {!showMediaPanel && !showVideoStage && <CallTypeBadge callType={callType} />}
 
-          {subtitle && (
+          {subtitle && !showVideoStage && (
             <p className="text-xs mt-4 px-4" style={{ color: "#3a4060" }}>
               {subtitle}
             </p>
           )}
 
-          {showMicPanel && (
-            <MicPermissionPanel
-              title={micErrorMessage}
-              steps={micPermissionSteps}
-              onRetry={() => onRetryMic?.()}
+          {showMediaPanel && (
+            <MediaPermissionPanel
+              title={mediaErrorMessage}
+              steps={mediaPermissionSteps}
+              onRetry={() => onRetryMedia?.()}
               onEnd={phase === "outgoing" ? onCancel : onEnd}
               endLabel={phase === "outgoing" ? "Huỷ cuộc gọi" : "Kết thúc cuộc gọi"}
+              retryLabel={isVideo ? "Cho phép camera & mic" : "Cho phép microphone"}
             />
           )}
 
-          {phase === "active" && !showMicPanel && (
+          {showVideoStage && (
+            <div className="mt-2 w-full">
+              <VideoStage
+                localStream={localStream}
+                remoteStream={remoteStream}
+                peer={peer}
+                cameraOff={cameraOff}
+                muted={muted}
+                statusText={statusText}
+              />
+            </div>
+          )}
+
+          {phase === "active" && !showMediaPanel && !isVideo && (
             <div
               className="mt-8 w-full rounded-2xl px-4 py-8 flex flex-col items-center gap-3"
               style={{ backgroundColor: "#111320", border: "1px solid #1e2240" }}
@@ -315,8 +485,8 @@ export default function CallOverlay({
           )}
         </div>
 
-        {!showMicPanel && (
-          <div className="flex items-center justify-center gap-8 sm:gap-12 mt-10 w-full pb-safe">
+        {!showMediaPanel && (
+          <div className="flex items-center justify-center gap-6 sm:gap-10 mt-8 w-full pb-safe flex-wrap">
             {phase === "incoming" && (
               <>
                 <ActionButton
@@ -334,9 +504,16 @@ export default function CallOverlay({
                   variant="accept"
                   onClick={onAccept}
                   icon={
-                    <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
-                    </svg>
+                    isVideo ? (
+                      <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <polygon points="23 7 16 12 23 17 23 7" />
+                        <rect x="1" y="5" width="15" height="14" rx="2" />
+                      </svg>
+                    ) : (
+                      <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
+                      </svg>
+                    )
                   }
                 />
               </>
@@ -359,7 +536,7 @@ export default function CallOverlay({
               <>
                 <ActionButton
                   label={muted ? "Bật mic" : "Tắt mic"}
-                  variant="neutral"
+                  variant={muted ? "muted" : "neutral"}
                   onClick={() => onToggleMute?.()}
                   icon={
                     muted ? (
@@ -380,6 +557,26 @@ export default function CallOverlay({
                     )
                   }
                 />
+                {isVideo && (
+                  <ActionButton
+                    label={cameraOff ? "Bật cam" : "Tắt cam"}
+                    variant={cameraOff ? "muted" : "neutral"}
+                    onClick={() => onToggleCamera?.()}
+                    icon={
+                      cameraOff ? (
+                        <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10" />
+                          <line x1="1" y1="1" x2="23" y2="23" />
+                        </svg>
+                      ) : (
+                        <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <polygon points="23 7 16 12 23 17 23 7" />
+                          <rect x="1" y="5" width="15" height="14" rx="2" />
+                        </svg>
+                      )
+                    }
+                  />
+                )}
                 <ActionButton
                   label="Kết thúc"
                   variant="reject"

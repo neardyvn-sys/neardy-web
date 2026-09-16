@@ -21,15 +21,17 @@ import {
   type CallType,
 } from "@/lib/types";
 import {
-  classifyMicError,
-  micErrorMessage,
-  micPermissionSteps,
-  prefetchMicrophone,
-  type MicErrorKind,
+  classifyMediaError,
+  mediaErrorMessage,
+  mediaPermissionSteps,
+  prefetchMedia,
+  type MediaDeviceKind,
+  type MediaErrorKind,
 } from "@/lib/microphone";
-import { AudioCallSession } from "@/lib/webrtcAudio";
+import { MediaCallSession } from "@/lib/webrtcAudio";
 
 const RING_MS = 30_000;
+const DISCONNECT_GRACE_MS = 4_000;
 const DEFAULT_ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
 type ChatWsPayload = Record<string, unknown>;
@@ -52,6 +54,7 @@ interface CallContextValue {
   peer: CallPeer | null;
   role: CallRole | null;
   muted: boolean;
+  cameraOff: boolean;
   connStatus: ConnStatus;
   notice: string | null;
   clearNotice: () => void;
@@ -66,8 +69,9 @@ interface CallContextValue {
   cancelCall: () => void;
   endCall: () => void;
   toggleMute: () => void;
-  micError: MicErrorKind | null;
-  retryMicrophone: () => void;
+  toggleCamera: () => void;
+  mediaError: MediaErrorKind | null;
+  retryMedia: () => void;
 }
 
 const CallContext = createContext<CallContextValue | null>(null);
@@ -84,6 +88,10 @@ function profileToPeer(profile: MeProfile): CallPeer {
 
 function parseCallType(raw: unknown): CallType {
   return raw === "video" ? "video" : "audio";
+}
+
+function devicesForCall(callType: CallType | null | undefined): MediaDeviceKind {
+  return callType === "video" ? "both" : "microphone";
 }
 
 function toRtcIceServers(servers: { urls: string | string[]; username?: string; credential?: string }[]): RTCIceServer[] {
@@ -108,16 +116,19 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [muted, setMuted] = useState(false);
+  const [cameraOff, setCameraOff] = useState(false);
   const [connStatus, setConnStatus] = useState<ConnStatus>("idle");
-  const [micError, setMicError] = useState<MicErrorKind | null>(null);
+  const [mediaError, setMediaError] = useState<MediaErrorKind | null>(null);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
 
   const callRef = useRef<ActiveCall | null>(null);
   const pendingRef = useRef(pendingOutgoing);
   const ringTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const sessionRef = useRef<AudioCallSession | null>(null);
-  const sessionReadyRef = useRef<Promise<AudioCallSession | null> | null>(null);
+  const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sessionRef = useRef<MediaCallSession | null>(null);
+  const sessionReadyRef = useRef<Promise<MediaCallSession | null> | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const endingRef = useRef(false);
 
@@ -139,20 +150,30 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setElapsedSec(0);
   }, []);
 
+  const clearDisconnectTimer = useCallback(() => {
+    if (disconnectTimerRef.current) {
+      clearTimeout(disconnectTimerRef.current);
+      disconnectTimerRef.current = null;
+    }
+  }, []);
+
   const cleanupWebRTC = useCallback(() => {
+    clearDisconnectTimer();
     sessionReadyRef.current = null;
     if (sessionRef.current) {
       sessionRef.current.cleanup();
       sessionRef.current = null;
     }
+    setLocalStream(null);
     setRemoteStream(null);
     setMuted(false);
+    setCameraOff(false);
     setConnStatus("idle");
-    setMicError(null);
+    setMediaError(null);
     if (remoteAudioRef.current) {
       remoteAudioRef.current.srcObject = null;
     }
-  }, []);
+  }, [clearDisconnectTimer]);
 
   const resetCall = useCallback(
     (message?: string) => {
@@ -178,15 +199,17 @@ export function CallProvider({ children }: { children: ReactNode }) {
     [sendChatWs],
   );
 
-  const handleMicFailure = useCallback((err: unknown) => {
-    const kind = classifyMicError(err);
-    setMicError(kind);
+  const handleMediaFailure = useCallback((err: unknown) => {
+    const kind = classifyMediaError(err);
+    setMediaError(kind);
     setConnStatus("failed");
     sessionReadyRef.current = null;
     if (sessionRef.current) {
       sessionRef.current.cleanup();
       sessionRef.current = null;
     }
+    setLocalStream(null);
+    setRemoteStream(null);
   }, []);
 
   const hangupAndReset = useCallback(
@@ -250,7 +273,6 @@ export function CallProvider({ children }: { children: ReactNode }) {
     };
   }, [call?.callId, call?.phase, scheduleRingTimeout, clearRingTimer, clearTick]);
 
-  // Active call duration ticker
   useEffect(() => {
     if (!call || call.phase !== "active") return;
     clearRingTimer();
@@ -262,16 +284,20 @@ export function CallProvider({ children }: { children: ReactNode }) {
     return () => clearTick();
   }, [call?.callId, call?.phase, clearRingTimer, clearTick]);
 
+  // Audio-only remote playback (video calls use <video> which carries audio).
   useEffect(() => {
     const el = remoteAudioRef.current;
     if (!el) return;
+    const isVideo = callRef.current?.callType === "video";
+    if (isVideo) {
+      el.srcObject = null;
+      return;
+    }
     el.srcObject = remoteStream;
     if (remoteStream) {
-      void el.play().catch(() => {
-        // Autoplay may require a prior user gesture; accept/start already provides one.
-      });
+      void el.play().catch(() => {});
     }
-  }, [remoteStream]);
+  }, [remoteStream, call?.callType]);
 
   const loadIceServers = useCallback(async (): Promise<RTCIceServer[]> => {
     try {
@@ -284,23 +310,20 @@ export function CallProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const ensureWebRTC = useCallback(
-    async (asOfferer: boolean): Promise<AudioCallSession | null> => {
+    async (asOfferer: boolean): Promise<MediaCallSession | null> => {
       const current = callRef.current;
       if (!current || current.phase !== "active") return null;
       if (sessionRef.current) return sessionRef.current;
       if (sessionReadyRef.current) {
-        const existing = await sessionReadyRef.current;
-        if (existing && asOfferer) {
-          // Already created as answerer; offerer path shouldn't create a second offer here.
-        }
-        return existing;
+        return sessionReadyRef.current;
       }
 
       const callId = current.callId;
-      let ready!: Promise<AudioCallSession | null>;
-      ready = (async (): Promise<AudioCallSession | null> => {
+      const withVideo = current.callType === "video";
+      let ready!: Promise<MediaCallSession | null>;
+      ready = (async (): Promise<MediaCallSession | null> => {
         setConnStatus("connecting");
-        const session = new AudioCallSession({
+        const session = new MediaCallSession({
           onIceCandidate: (candidate) => {
             const c = callRef.current;
             if (!c) return;
@@ -312,9 +335,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
               candidate,
             });
           },
+          onLocalStream: (stream) => setLocalStream(stream),
           onRemoteStream: (stream) => setRemoteStream(stream),
           onConnectionState: (state) => {
             if (state === "connected") {
+              clearDisconnectTimer();
               setConnStatus("connected");
             } else if (state === "connecting") {
               setConnStatus("connecting");
@@ -322,6 +347,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
               setConnStatus("failed");
             } else if (state === "disconnected") {
               setConnStatus("connecting");
+              clearDisconnectTimer();
+              disconnectTimerRef.current = setTimeout(() => {
+                const pcState = sessionRef.current;
+                if (!pcState || !callRef.current) return;
+                // Still down after grace → treat as remote disconnect / ICE loss
+                hangupAndReset("Đối phương đã ngắt kết nối", true);
+              }, DISCONNECT_GRACE_MS);
+            } else if (state === "closed") {
+              clearDisconnectTimer();
             }
           },
           onError: (code) => {
@@ -332,9 +366,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
         });
 
         try {
-          setMicError(null);
+          setMediaError(null);
           const iceServers = await loadIceServers();
-          await session.start(iceServers);
+          await session.start(iceServers, { withVideo });
           if (callRef.current?.callId !== callId) {
             session.cleanup();
             return null;
@@ -355,7 +389,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         } catch (err) {
           session.cleanup();
           if (sessionRef.current === session) sessionRef.current = null;
-          handleMicFailure(err);
+          handleMediaFailure(err);
           return null;
         } finally {
           if (sessionReadyRef.current === ready) {
@@ -367,10 +401,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
       sessionReadyRef.current = ready;
       return ready;
     },
-    [hangupAndReset, handleMicFailure, loadIceServers, sendSignaling],
+    [clearDisconnectTimer, hangupAndReset, handleMediaFailure, loadIceServers, sendSignaling],
   );
 
-  const retryMicrophone = useCallback(() => {
+  const retryMedia = useCallback(() => {
     const current = callRef.current;
     if (!current || current.phase !== "active") return;
     cleanupWebRTC();
@@ -496,7 +530,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
               sdp: answer,
             });
           } catch (err) {
-            handleMicFailure(err);
+            handleMediaFailure(err);
           }
         })();
         return;
@@ -539,15 +573,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
     });
 
     return unsubscribe;
-  }, [user, subscribeChatWs, loadPeer, resetCall, ensureWebRTC, sendSignaling, hangupAndReset, handleMicFailure]);
+  }, [user, subscribeChatWs, loadPeer, resetCall, ensureWebRTC, sendSignaling, hangupAndReset, handleMediaFailure]);
 
-  // Prefetch mic permission while outgoing call is ringing.
+  // Prefetch device permissions while outgoing call is ringing.
   useEffect(() => {
     if (!call || call.phase !== "outgoing" || call.role !== "caller") return;
-    void prefetchMicrophone().then((kind) => {
-      if (kind) setMicError(kind);
+    const withVideo = call.callType === "video";
+    void prefetchMedia(withVideo).then((kind) => {
+      if (kind) setMediaError(kind);
     });
-  }, [call?.callId, call?.phase, call?.role]);
+  }, [call?.callId, call?.phase, call?.role, call?.callType]);
 
   const startCall = useCallback(
     async (params: {
@@ -566,7 +601,6 @@ export function CallProvider({ children }: { children: ReactNode }) {
         return false;
       }
 
-      // Phase 5: audio WebRTC only (video call type still uses audio media).
       const callType: CallType = params.callType === "video" ? "video" : "audio";
 
       try {
@@ -609,7 +643,6 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const next = { ...current, phase: "active" as const, startedAt: Date.now() };
     callRef.current = next;
     setCall(next);
-    // Callee prepares PC + mic; waits for webrtc.offer from caller.
     void ensureWebRTC(false);
   }, [sendSignaling, ensureWebRTC]);
 
@@ -657,6 +690,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const toggleCamera = useCallback(() => {
+    setCameraOff((prev) => {
+      const next = !prev;
+      sessionRef.current?.setCameraEnabled(!next);
+      return next;
+    });
+  }, []);
+
+  const devices = devicesForCall(call?.callType ?? pendingOutgoing?.callType);
+
   const value = useMemo<CallContextValue>(
     () => ({
       phase: call?.phase ?? "idle",
@@ -664,6 +707,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       peer: call?.peer ?? null,
       role: call?.role ?? null,
       muted,
+      cameraOff,
       connStatus,
       notice,
       clearNotice: () => setNotice(null),
@@ -673,10 +717,26 @@ export function CallProvider({ children }: { children: ReactNode }) {
       cancelCall,
       endCall,
       toggleMute,
-      micError,
-      retryMicrophone,
+      toggleCamera,
+      mediaError,
+      retryMedia,
     }),
-    [call, muted, connStatus, micError, notice, startCall, acceptCall, rejectCall, cancelCall, endCall, toggleMute, retryMicrophone],
+    [
+      call,
+      muted,
+      cameraOff,
+      connStatus,
+      mediaError,
+      notice,
+      startCall,
+      acceptCall,
+      rejectCall,
+      cancelCall,
+      endCall,
+      toggleMute,
+      toggleCamera,
+      retryMedia,
+    ],
   );
 
   const overlayPeer = call?.peer ?? pendingOutgoing?.peer;
@@ -685,7 +745,6 @@ export function CallProvider({ children }: { children: ReactNode }) {
   return (
     <CallContext.Provider value={value}>
       {children}
-      {/* Remote audio playback element */}
       <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
       {overlayPeer && overlayCallType && (call || pendingOutgoing) && (
         <CallOverlay
@@ -695,16 +754,20 @@ export function CallProvider({ children }: { children: ReactNode }) {
           peer={overlayPeer}
           elapsedSec={elapsedSec}
           muted={muted}
+          cameraOff={cameraOff}
           connStatus={connStatus}
-          micError={micError}
-          micErrorMessage={micError ? micErrorMessage(micError) : null}
-          micPermissionSteps={micError ? micPermissionSteps(micError) : []}
+          localStream={localStream}
+          remoteStream={remoteStream}
+          mediaError={mediaError}
+          mediaErrorMessage={mediaError ? mediaErrorMessage(mediaError, devices) : null}
+          mediaPermissionSteps={mediaError ? mediaPermissionSteps(mediaError, devices) : []}
           onAccept={acceptCall}
           onReject={rejectCall}
           onCancel={cancelCall}
           onEnd={endCall}
           onToggleMute={toggleMute}
-          onRetryMic={retryMicrophone}
+          onToggleCamera={toggleCamera}
+          onRetryMedia={retryMedia}
         />
       )}
       {notice && !call && !pendingOutgoing && (
