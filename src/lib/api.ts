@@ -348,6 +348,26 @@ export const usersApi = {
   get: (id: string) => api<MeProfile>(`/v1/users/${id}`),
 };
 
+export type PresenceStatus = {
+  user_id: string;
+  online: boolean;
+  last_seen_at?: string;
+};
+
+export const presenceApi = {
+  get: async (userId: string): Promise<PresenceStatus> => {
+    const token = getAccessToken();
+    const res = await fetch(`${API_URL}/api/users/${userId}/presence`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new ApiError(res.status, json.error || "presence lookup failed");
+    }
+    return json as PresenceStatus;
+  },
+};
+
 export const uploadsApi = {
   /** Upload via API → Cloudflare R2 (multipart). */
   file: async (file: File, kind: "image" | "video") => {

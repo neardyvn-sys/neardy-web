@@ -82,6 +82,17 @@ export interface DiaryPost {
   media?: { id: string; type: string; url: string }[];
 }
 
+export type CallType = "audio" | "video";
+export type CallPhase = "idle" | "outgoing" | "incoming" | "active";
+export type CallRole = "caller" | "callee";
+
+export interface CallPeer {
+  id: string;
+  name: string;
+  avatar: string;
+  photoUrl?: string | null;
+}
+
 export function initialsFromName(name: string) {
   return name
     .split(/\s+/)
