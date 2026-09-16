@@ -16,7 +16,10 @@ export default function AppHeader() {
     pathname.startsWith("/messages/") ||
     pathname.startsWith("/wall/") ||
     pathname.startsWith("/friends/") ||
-    pathname.startsWith("/profile/security")
+    pathname.startsWith("/profile/security") ||
+    pathname.startsWith("/profile/notifications") ||
+    pathname.startsWith("/profile/location") ||
+    pathname.startsWith("/profile/privacy")
   ) {
     return null;
   }

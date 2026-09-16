@@ -14,6 +14,11 @@ import { useRouter } from "next/navigation";
 import type { AuthUser, MatchItem, NearbyFilters, NearbyUser, PermissionState } from "@/lib/types";
 import { initialsFromName } from "@/lib/types";
 import {
+  FALLBACK_LOCATION,
+  loadLocationSharing,
+  saveLocationSharing,
+} from "@/lib/locationPrefs";
+import {
   authApi,
   clearTokens,
   feedApi,
@@ -35,6 +40,10 @@ interface AppContextValue {
   users: NearbyUser[];
   matches: MatchItem[];
   permissionState: PermissionState;
+  locationSharing: boolean;
+  locationBusy: boolean;
+  setLocationSharing: (on: boolean) => Promise<void>;
+  requestLocation: () => Promise<void>;
   friends: Set<string>;
   chatWsReady: boolean;
   activeConversationId: string | null;
@@ -114,6 +123,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<NearbyUser[]>([]);
   const [matches, setMatches] = useState<MatchItem[]>([]);
   const [permissionState, setPermissionState] = useState<PermissionState>("loading");
+  const [locationSharing, setLocationSharingState] = useState(true);
+  const [locationBusy, setLocationBusy] = useState(false);
   const [friends, setFriends] = useState<Set<string>>(new Set());
   const [chatWsReady, setChatWsReady] = useState(false);
   const [activeConversationId, setActiveConversationIdState] = useState<string | null>(null);
@@ -146,6 +157,124 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   refreshMatchesRef.current = refreshMatches;
+
+  const refreshNearby = useCallback(async (filters?: NearbyFilters) => {
+    try {
+      const data = await nearbyApi.list(
+        filters
+          ? {
+              min_age: filters.minAge,
+              max_age: filters.maxAge,
+              max_distance_km: filters.maxDistanceKm,
+              gender: filters.genders?.length ? filters.genders.join(",") : undefined,
+            }
+          : undefined,
+      );
+      setUsers(
+        data.users.map((u) => ({
+          id: u.id,
+          name: u.display_name,
+          avatar: initialsFromName(u.display_name),
+          status: u.bio || "Đang ở gần bạn",
+          distanceKm: u.distance_km,
+          online: u.show_online !== false,
+          bio: u.bio || "",
+          age: u.age ?? undefined,
+          gender: u.gender,
+          photoUrl: u.primary_photo,
+        })),
+      );
+    } catch (e) {
+      setUsers([]);
+      console.warn("nearby", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    setLocationSharingState(loadLocationSharing());
+  }, []);
+
+  const applyLoc = useCallback(
+    async (lat: number, lng: number) => {
+      await meApi.setLocation(lat, lng);
+      await refreshNearby();
+      await refreshMatches();
+    },
+    [refreshMatches, refreshNearby],
+  );
+
+  const syncLocation = useCallback(
+    async (sharingOverride?: boolean) => {
+      const sharing = sharingOverride ?? loadLocationSharing();
+
+      if (!sharing) {
+        try {
+          if (typeof navigator !== "undefined" && navigator.permissions?.query) {
+            const status = await navigator.permissions.query({ name: "geolocation" });
+            setPermissionState(status.state === "granted" ? "granted" : "denied");
+          } else {
+            setPermissionState((prev) => (prev === "loading" ? "denied" : prev));
+          }
+        } catch {
+          setPermissionState((prev) => (prev === "loading" ? "denied" : prev));
+        }
+        await applyLoc(FALLBACK_LOCATION.lat, FALLBACK_LOCATION.lng);
+        return;
+      }
+      if (typeof navigator === "undefined" || !navigator.geolocation) {
+        setPermissionState("denied");
+        await applyLoc(FALLBACK_LOCATION.lat, FALLBACK_LOCATION.lng);
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            setPermissionState("granted");
+            try {
+              await applyLoc(pos.coords.latitude, pos.coords.longitude);
+            } catch (err) {
+              console.warn(err);
+            }
+            resolve();
+          },
+          async () => {
+            setPermissionState("denied");
+            try {
+              await applyLoc(FALLBACK_LOCATION.lat, FALLBACK_LOCATION.lng);
+            } catch (err) {
+              console.warn(err);
+            }
+            resolve();
+          },
+          { enableHighAccuracy: true, timeout: 8000 },
+        );
+      });
+    },
+    [applyLoc],
+  );
+
+  const requestLocation = useCallback(async () => {
+    setLocationBusy(true);
+    try {
+      await syncLocation(true);
+    } finally {
+      setLocationBusy(false);
+    }
+  }, [syncLocation]);
+
+  const setLocationSharing = useCallback(
+    async (on: boolean) => {
+      saveLocationSharing(on);
+      setLocationSharingState(on);
+      setLocationBusy(true);
+      try {
+        await syncLocation(on);
+      } finally {
+        setLocationBusy(false);
+      }
+    },
+    [syncLocation],
+  );
 
   const applyInboxEvent = useCallback((msg: ChatWsPayload) => {
     const type = String(msg.type || "");
@@ -268,38 +397,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [user?.id, applyInboxEvent]);
 
-  const refreshNearby = useCallback(async (filters?: NearbyFilters) => {
-    try {
-      const data = await nearbyApi.list(
-        filters
-          ? {
-              min_age: filters.minAge,
-              max_age: filters.maxAge,
-              max_distance_km: filters.maxDistanceKm,
-              gender: filters.genders?.length ? filters.genders.join(",") : undefined,
-            }
-          : undefined,
-      );
-      setUsers(
-        data.users.map((u) => ({
-          id: u.id,
-          name: u.display_name,
-          avatar: initialsFromName(u.display_name),
-          status: u.bio || "Đang ở gần bạn",
-          distanceKm: u.distance_km,
-          online: true,
-          bio: u.bio || "",
-          age: u.age ?? undefined,
-          gender: u.gender,
-          photoUrl: u.primary_photo,
-        })),
-      );
-    } catch (e) {
-      setUsers([]);
-      console.warn("nearby", e);
-    }
-  }, []);
-
   const bootstrapSession = useCallback(async () => {
     if (!getAccessToken()) {
       setUser(null);
@@ -310,43 +407,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       let profile = await meApi.get();
       profile = await ensureOnboarded(profile);
       setUser(profileToAuth(profile));
-
-      const applyLoc = async (lat: number, lng: number) => {
-        await meApi.setLocation(lat, lng);
-        await refreshNearby();
-        await refreshMatches();
-      };
-
-      await new Promise<void>((resolve) => {
-        navigator.geolocation.getCurrentPosition(
-          async (pos) => {
-            setPermissionState("granted");
-            try {
-              await applyLoc(pos.coords.latitude, pos.coords.longitude);
-            } catch (err) {
-              console.warn(err);
-            }
-            resolve();
-          },
-          async () => {
-            setPermissionState("denied");
-            try {
-              await applyLoc(21.028, 105.834);
-            } catch (err) {
-              console.warn(err);
-            }
-            resolve();
-          },
-          { enableHighAccuracy: true, timeout: 8000 },
-        );
-      });
+      await syncLocation();
     } catch {
       clearTokens();
       setUser(null);
     } finally {
       setReady(true);
     }
-  }, [refreshMatches, refreshNearby]);
+  }, [syncLocation]);
 
   useEffect(() => {
     void bootstrapSession();
@@ -362,34 +430,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       profile = await ensureOnboarded(profile);
       setUser(profileToAuth(profile));
       setReady(true);
-
-      await new Promise<void>((resolve) => {
-        navigator.geolocation.getCurrentPosition(
-          async (pos) => {
-            setPermissionState("granted");
-            try {
-              await meApi.setLocation(pos.coords.latitude, pos.coords.longitude);
-              await refreshNearby();
-              await refreshMatches();
-            } catch {}
-            resolve();
-          },
-          async () => {
-            setPermissionState("denied");
-            try {
-              await meApi.setLocation(21.028, 105.834);
-              await refreshNearby();
-              await refreshMatches();
-            } catch {}
-            resolve();
-          },
-          { enableHighAccuracy: true, timeout: 8000 },
-        );
-      });
-
+      await syncLocation();
       router.push("/nearby");
     },
-    [refreshMatches, refreshNearby, router],
+    [router, syncLocation],
   );
 
   const logout = useCallback(async () => {
@@ -426,6 +470,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       users,
       matches,
       permissionState,
+      locationSharing,
+      locationBusy,
+      setLocationSharing,
+      requestLocation,
       friends,
       chatWsReady,
       activeConversationId,
@@ -445,6 +493,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       users,
       matches,
       permissionState,
+      locationSharing,
+      locationBusy,
+      setLocationSharing,
+      requestLocation,
       friends,
       chatWsReady,
       activeConversationId,

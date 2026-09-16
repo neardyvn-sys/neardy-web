@@ -117,7 +117,17 @@ export type MeProfile = {
   looking_for: string[];
   location?: { lat: number; lng: number };
   onboarding_completed: boolean;
+  privacy?: PrivacySettings;
   photos: { id: string; url: string; is_primary: boolean }[];
+};
+
+export type PrivacySettings = {
+  nearby_visibility: "everyone" | "matches" | "hidden";
+  wall_visibility: "everyone" | "friends" | "private";
+  show_age: boolean;
+  show_distance: boolean;
+  show_online: boolean;
+  message_permission: "everyone" | "friends";
 };
 
 export const meApi = {
@@ -126,6 +136,24 @@ export const meApi = {
     api<MeProfile>("/v1/me", { method: "PATCH", body: JSON.stringify(body) }),
   setLocation: (lat: number, lng: number) =>
     api("/v1/me/location", { method: "PATCH", body: JSON.stringify({ lat, lng }) }),
+  privacy: () => api<PrivacySettings>("/v1/me/privacy"),
+  patchPrivacy: (body: Partial<PrivacySettings>) =>
+    api<PrivacySettings>("/v1/me/privacy", { method: "PATCH", body: JSON.stringify(body) }),
+};
+
+export const blocksApi = {
+  list: () =>
+    api<{
+      blocks: {
+        user_id: string;
+        display_name: string;
+        primary_photo: string | null;
+        created_at: string;
+      }[];
+    }>("/v1/blocks"),
+  block: (userId: string) =>
+    api("/v1/blocks", { method: "POST", body: JSON.stringify({ user_id: userId }) }),
+  unblock: (userId: string) => api(`/v1/blocks/${userId}`, { method: "DELETE" }),
 };
 
 export const nearbyApi = {
@@ -149,7 +177,8 @@ export const nearbyApi = {
         bio: string | null;
         gender: string | null;
         age: number | null;
-        distance_km: number;
+        distance_km: number | null;
+        show_online?: boolean;
         primary_photo: string | null;
       }[];
     }>(`/v1/nearby?${q.toString()}`);
@@ -237,8 +266,13 @@ export const friendRequestsApi = {
 };
 
 export const feedApi = {
-  list: () =>
-    api<{
+  list: (opts?: { userId?: string; limit?: number }) => {
+    const q = new URLSearchParams({
+      page: "0",
+      limit: String(opts?.limit ?? 30),
+    });
+    if (opts?.userId) q.set("user_id", opts.userId);
+    return api<{
       posts: {
         id: string;
         body: string;
@@ -251,7 +285,8 @@ export const feedApi = {
         comment_count: number;
         liked_by_me: boolean;
       }[];
-    }>("/v1/feed?page=0&limit=30"),
+    }>(`/v1/feed?${q.toString()}`);
+  },
   create: (
     body: string,
     media: { type: "image" | "video"; url: string; sort_order: number }[] = [],

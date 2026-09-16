@@ -29,11 +29,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/messages/") ||
     pathname.startsWith("/wall/") ||
     pathname.startsWith("/friends/") ||
-    pathname.startsWith("/profile/security");
+    pathname.startsWith("/profile/security") ||
+    pathname.startsWith("/profile/notifications") ||
+    pathname.startsWith("/profile/location") ||
+    pathname.startsWith("/profile/privacy");
   const fullBleed =
     pathname.startsWith("/wall/") ||
     pathname.startsWith("/friends/") ||
-    pathname.startsWith("/profile/security");
+    pathname.startsWith("/profile/security") ||
+    pathname.startsWith("/profile/notifications") ||
+    pathname.startsWith("/profile/location") ||
+    pathname.startsWith("/profile/privacy");
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: "#0a0c14", color: "#e8eaf2" }}>

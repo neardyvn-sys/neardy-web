@@ -3,7 +3,7 @@ export interface NearbyUser {
   name: string;
   avatar: string;
   status: string;
-  distanceKm: number;
+  distanceKm: number | null;
   online: boolean;
   bio: string;
   age?: number;
@@ -77,7 +77,9 @@ export interface DiaryPost {
   time: string;
   likes: number;
   likedByMe?: boolean;
+  commentCount?: number;
   image?: string;
+  media?: { id: string; type: string; url: string }[];
 }
 
 export function initialsFromName(name: string) {

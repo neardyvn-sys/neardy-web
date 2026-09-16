@@ -4,6 +4,12 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/components/providers/AppProvider";
 import { feedApi, meApi } from "@/lib/api";
+import {
+  loadNotificationPrefs,
+  notificationPrefsSummary,
+} from "@/lib/notificationPrefs";
+import { locationSharingSummary } from "@/lib/locationPrefs";
+import { privacySummary } from "@/lib/privacy";
 
 const SETTINGS = [
   {
@@ -12,29 +18,54 @@ const SETTINGS = [
     sub: "Email, mật khẩu, mã QR",
     href: "/profile/security",
   },
-  { icon: "🔔", label: "Thông báo", sub: "Bật tất cả" },
-  { icon: "📍", label: "Quyền vị trí", sub: "Luôn bật" },
-  { icon: "🔒", label: "Quyền riêng tư", sub: "Tất cả bạn bè" },
+  {
+    icon: "🔔",
+    label: "Thông báo",
+    sub: "Bật tất cả",
+    href: "/profile/notifications",
+  },
+  {
+    icon: "📍",
+    label: "Quyền vị trí",
+    sub: "Luôn bật",
+    href: "/profile/location",
+  },
+  {
+    icon: "🔒",
+    label: "Quyền riêng tư",
+    sub: "Công khai",
+    href: "/profile/privacy",
+  },
   { icon: "🎨", label: "Giao diện", sub: "Tối" },
 ] as const;
 
 export default function ProfilePanel() {
-  const { user, friends, logout, permissionState } = useApp();
+  const { user, friends, logout, permissionState, locationSharing } = useApp();
   const router = useRouter();
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [postCount, setPostCount] = useState(0);
+  const [notifSub, setNotifSub] = useState("Bật tất cả");
+  const [privacySub, setPrivacySub] = useState("Công khai");
+
+  useEffect(() => {
+    setNotifSub(notificationPrefsSummary(loadNotificationPrefs()));
+  }, []);
 
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
     (async () => {
       try {
-        const [profile, feed] = await Promise.all([meApi.get(), feedApi.list()]);
+        const [profile, feed] = await Promise.all([
+          meApi.get(),
+          feedApi.list({ userId: user.id, limit: 100 }),
+        ]);
         if (cancelled) return;
         const primary =
           profile.photos.find((p) => p.is_primary)?.url || profile.photos[0]?.url || null;
         setPhotoUrl(primary);
-        setPostCount(feed.posts.filter((p) => p.user_id === user.id).length);
+        setPostCount(feed.posts.length);
+        if (profile.privacy) setPrivacySub(privacySummary(profile.privacy));
       } catch {
         // keep defaults
       }
@@ -46,12 +77,14 @@ export default function ProfilePanel() {
 
   if (!user) return null;
 
-  const locationSub =
-    permissionState === "granted" ? "Luôn bật" : permissionState === "denied" ? "Đã tắt" : "Đang kiểm tra…";
+  const locationSub = locationSharingSummary(locationSharing, permissionState);
 
-  const settings = SETTINGS.map((item) =>
-    item.label === "Quyền vị trí" ? { ...item, sub: locationSub } : item,
-  );
+  const settings = SETTINGS.map((item) => {
+    if (item.label === "Quyền vị trí") return { ...item, sub: locationSub };
+    if (item.label === "Thông báo") return { ...item, sub: notifSub };
+    if (item.label === "Quyền riêng tư") return { ...item, sub: privacySub };
+    return item;
+  });
 
   return (
     <div className="px-4 pb-8">

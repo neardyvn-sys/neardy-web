@@ -10,7 +10,8 @@ export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: numb
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-export function formatDist(km: number) {
+export function formatDist(km: number | null | undefined) {
+  if (km == null || Number.isNaN(km)) return "Ẩn khoảng cách";
   if (km < 1) return `${Math.round(km * 1000)} m`;
   return `${km.toFixed(1)} km`;
 }

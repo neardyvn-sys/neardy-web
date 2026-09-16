@@ -3,8 +3,30 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AuthUser, DiaryPost } from "@/lib/types";
-import { COVER_OPTIONS, COVER_STORAGE_KEY, MY_PHOTOS, MY_VIDEOS } from "@/lib/constants";
-import { feedApi, meApi } from "@/lib/api";
+import { COVER_OPTIONS, COVER_STORAGE_KEY } from "@/lib/constants";
+import { feedApi, meApi, uploadsApi } from "@/lib/api";
+import CommentSheet from "@/components/feed/CommentSheet";
+
+const MAX_MEDIA = 10;
+const IMAGE_ACCEPT = "image/jpeg,image/png,image/webp,image/gif";
+const VIDEO_ACCEPT = "video/mp4,video/webm,video/quicktime";
+
+type PendingMedia = {
+  id: string;
+  file: File;
+  kind: "image" | "video";
+  previewUrl: string;
+};
+
+type PostMode = "diary" | "image" | "video";
+
+type DiaryMediaItem = {
+  id: string;
+  url: string;
+  postId: string;
+  time: string;
+  text?: string;
+};
 
 function timeAgo(iso: string) {
   const diff = Date.now() - new Date(iso).getTime();
@@ -16,8 +38,44 @@ function timeAgo(iso: string) {
   return `${Math.floor(h / 24)} ngày trước`;
 }
 
-function unsplash(id: string, w: number, h: number) {
-  return `https://images.unsplash.com/${id}?w=${w}&h=${h}&fit=crop&auto=format`;
+function collectDiaryMedia(posts: DiaryPost[], type: "image" | "video"): DiaryMediaItem[] {
+  const items: DiaryMediaItem[] = [];
+  for (const post of posts) {
+    for (const m of post.media || []) {
+      if (m.type !== type) continue;
+      items.push({
+        id: m.id || `${post.id}-${m.url}`,
+        url: m.url,
+        postId: post.id,
+        time: post.time,
+        text: post.text,
+      });
+    }
+  }
+  return items;
+}
+
+function mapDiaryPosts(
+  posts: {
+    id: string;
+    body: string;
+    created_at: string;
+    like_count: number;
+    liked_by_me: boolean;
+    comment_count: number;
+    media?: { id: string; type: string; url: string }[];
+  }[],
+): DiaryPost[] {
+  return posts.map((p) => ({
+    id: p.id,
+    text: p.body,
+    time: timeAgo(p.created_at),
+    likes: p.like_count,
+    likedByMe: p.liked_by_me,
+    commentCount: p.comment_count,
+    media: p.media || [],
+    image: p.media?.find((m) => m.type === "image")?.url,
+  }));
 }
 
 export default function MyWall({ user }: { user: AuthUser }) {
@@ -26,12 +84,32 @@ export default function MyWall({ user }: { user: AuthUser }) {
   const [bio, setBio] = useState(user.bio || "Thích khám phá · Tìm bạn mới quanh đây 📍");
   const [editingBio, setEditingBio] = useState(false);
   const [diaryPosts, setDiaryPosts] = useState<DiaryPost[]>([]);
-  const [showPostModal, setShowPostModal] = useState(false);
+  const [postMode, setPostMode] = useState<PostMode | null>(null);
   const [postText, setPostText] = useState("");
+  const [pending, setPending] = useState<PendingMedia[]>([]);
   const [posting, setPosting] = useState(false);
+  const [postError, setPostError] = useState("");
   const [showCoverPicker, setShowCoverPicker] = useState(false);
   const [activeSection, setActiveSection] = useState<"diary" | "photos" | "videos">("diary");
+  const [commentPostId, setCommentPostId] = useState<string | null>(null);
   const bioRef = useRef<HTMLTextAreaElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+  const canSubmitPost =
+    !posting &&
+    (postMode === "image" || postMode === "video"
+      ? pending.length > 0
+      : !!postText.trim() || pending.length > 0);
+  const diaryImages = collectDiaryMedia(diaryPosts, "image");
+  const diaryVideos = collectDiaryMedia(diaryPosts, "video");
+  const postTitle =
+    postMode === "image" ? "Đăng ảnh" : postMode === "video" ? "Đăng video" : "Đăng nhật ký";
+  const postPlaceholder =
+    postMode === "image" || postMode === "video"
+      ? "Bạn đang nghĩ gì?"
+      : "Bạn đang nghĩ gì vậy?";
+  const allowImages = postMode === "diary" || postMode === "image";
+  const allowVideos = postMode === "diary" || postMode === "video";
 
   useEffect(() => {
     const saved = Number(localStorage.getItem(COVER_STORAGE_KEY) || "0");
@@ -45,23 +123,72 @@ export default function MyWall({ user }: { user: AuthUser }) {
   useEffect(() => {
     void (async () => {
       try {
-        const data = await feedApi.list();
-        setDiaryPosts(
-          data.posts
-            .filter((p) => p.user_id === user.id)
-            .map((p) => ({
-              id: p.id,
-              text: p.body,
-              time: timeAgo(p.created_at),
-              likes: p.like_count,
-              likedByMe: p.liked_by_me,
-            })),
-        );
+        const data = await feedApi.list({ userId: user.id, limit: 50 });
+        setDiaryPosts(mapDiaryPosts(data.posts));
       } catch {
         setDiaryPosts([]);
       }
     })();
   }, [user.id]);
+
+  useEffect(() => {
+    return () => {
+      pending.forEach((p) => URL.revokeObjectURL(p.previewUrl));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const clearPending = () => {
+    setPending((prev) => {
+      prev.forEach((p) => URL.revokeObjectURL(p.previewUrl));
+      return [];
+    });
+  };
+
+  const openPostModal = (mode: PostMode) => {
+    setPostMode(mode);
+    setPostError("");
+  };
+
+  const closePostModal = () => {
+    if (posting) return;
+    setPostMode(null);
+    setPostText("");
+    setPostError("");
+    clearPending();
+  };
+
+  const addFiles = (files: FileList | null, kind: "image" | "video") => {
+    if (!files?.length) return;
+    if (kind === "image" && !allowImages) return;
+    if (kind === "video" && !allowVideos) return;
+    setPostError("");
+    const next: PendingMedia[] = [];
+    const label = postMode === "image" ? "ảnh" : postMode === "video" ? "video" : "ảnh/video";
+    for (const file of Array.from(files)) {
+      if (pending.length + next.length >= MAX_MEDIA) {
+        setPostError(`Tối đa ${MAX_MEDIA} ${label} mỗi bài`);
+        break;
+      }
+      if (kind === "image" && !file.type.startsWith("image/")) continue;
+      if (kind === "video" && !file.type.startsWith("video/")) continue;
+      next.push({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        file,
+        kind,
+        previewUrl: URL.createObjectURL(file),
+      });
+    }
+    if (next.length) setPending((prev) => [...prev, ...next]);
+  };
+
+  const removePending = (id: string) => {
+    setPending((prev) => {
+      const target = prev.find((p) => p.id === id);
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((p) => p.id !== id);
+    });
+  };
 
   const saveCover = (i: number) => {
     setCover(i);
@@ -79,30 +206,44 @@ export default function MyWall({ user }: { user: AuthUser }) {
   };
 
   const submitPost = async () => {
-    if (!postText.trim() || posting) return;
+    if (!canSubmitPost || !postMode) return;
+    if (postMode === "image" && pending.some((p) => p.kind !== "image")) {
+      setPostError("Chỉ được đăng ảnh");
+      return;
+    }
+    if (postMode === "video" && pending.some((p) => p.kind !== "video")) {
+      setPostError("Chỉ được đăng video");
+      return;
+    }
     setPosting(true);
+    setPostError("");
     try {
-      await feedApi.create(postText.trim());
-      setDiaryPosts((prev) => [
-        { id: `local-${Date.now()}`, text: postText.trim(), time: "vừa xong", likes: 0 },
-        ...prev,
-      ]);
+      const media: { type: "image" | "video"; url: string; sort_order: number }[] = [];
+      for (let i = 0; i < pending.length; i++) {
+        const item = pending[i];
+        const uploaded = await uploadsApi.file(item.file, item.kind);
+        media.push({
+          type: item.kind,
+          url: uploaded.public_url,
+          sort_order: i,
+        });
+      }
+      await feedApi.create(postText.trim(), media);
       setPostText("");
-      setShowPostModal(false);
-      const data = await feedApi.list();
-      setDiaryPosts(
-        data.posts
-          .filter((p) => p.user_id === user.id)
-          .map((p) => ({
-            id: p.id,
-            text: p.body,
-            time: timeAgo(p.created_at),
-            likes: p.like_count,
-            likedByMe: p.liked_by_me,
-          })),
+      clearPending();
+      setPostMode(null);
+      const data = await feedApi.list({ userId: user.id, limit: 50 });
+      setDiaryPosts(mapDiaryPosts(data.posts));
+    } catch (e) {
+      setPostError(
+        e instanceof Error
+          ? e.message
+          : postMode === "image"
+            ? "Đăng ảnh thất bại"
+            : postMode === "video"
+              ? "Đăng video thất bại"
+              : "Đăng nhật ký thất bại",
       );
-    } catch {
-      // keep modal open on failure
     } finally {
       setPosting(false);
     }
@@ -210,7 +351,7 @@ export default function MyWall({ user }: { user: AuthUser }) {
             </div>
           </div>
           <button
-            onClick={() => setShowPostModal(true)}
+            onClick={() => openPostModal("diary")}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all"
             style={{
               background: "linear-gradient(135deg, #6c63ff, #5b54e8)",
@@ -293,114 +434,184 @@ export default function MyWall({ user }: { user: AuthUser }) {
 
         {activeSection === "diary" && (
           <div className="pb-8">
-            {diaryPosts.length === 0 ? (
-              <div className="text-center py-14 flex flex-col items-center">
-                <div
-                  className="w-16 h-16 rounded-2xl mb-4 flex items-center justify-center"
-                  style={{ backgroundColor: "#111320", border: "1px solid #1e2240" }}
-                >
-                  <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="#3a4060" strokeWidth={1.5}>
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                  </svg>
-                </div>
-                <p className="text-sm font-semibold mb-1" style={{ color: "#6b74a0" }}>
-                  Chưa có bài đăng nào
-                </p>
-                <p className="text-xs mb-5" style={{ color: "#3a4060" }}>
-                  Chia sẻ khoảnh khắc đầu tiên của bạn
-                </p>
-                <button
-                  onClick={() => setShowPostModal(true)}
-                  className="flex items-center gap-2 px-6 py-3 rounded-2xl text-sm font-bold transition-all"
+            <div className="relative pl-6">
+              <div
+                className="absolute left-[7px] top-2 bottom-2 w-px"
+                style={{ backgroundColor: "#1e2240" }}
+              />
+
+              {/* Composer = timeline start */}
+              <div className="relative pb-6">
+                <span
+                  className="absolute -left-6 top-3.5 w-3.5 h-3.5 rounded-full z-10"
                   style={{
-                    background: "linear-gradient(135deg, #6c63ff, #5b54e8)",
-                    color: "#fff",
-                    boxShadow: "0 8px 24px rgba(108,99,255,0.3)",
+                    backgroundColor: "#6c63ff",
+                    boxShadow: "0 0 0 3px rgba(108,99,255,0.2)",
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => openPostModal("diary")}
+                  className="w-full text-left px-4 py-3.5 rounded-2xl text-sm transition-all"
+                  style={{
+                    backgroundColor: "#111320",
+                    border: "1px solid #1e2240",
+                    color: "#6b74a0",
                   }}
                 >
-                  <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                  Đăng lên nhật ký
+                  Bạn đang nghĩ gì?
                 </button>
               </div>
-            ) : (
-              <div className="space-y-3">
-                {diaryPosts.map((post) => {
-                  const liked = !!post.likedByMe;
-                  return (
-                    <article
-                      key={post.id}
-                      className="rounded-2xl overflow-hidden"
-                      style={{ backgroundColor: "#111320", border: "1px solid #1e2240" }}
-                    >
-                      <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
-                        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center text-xs font-bold text-white">
-                          {user.avatar}
-                        </div>
-                        <div>
-                          <p className="text-xs font-bold" style={{ color: "#e8eaf2" }}>
-                            {user.name}
-                          </p>
-                          <p className="text-xs" style={{ color: "#3a4060" }}>
-                            {post.time}
-                          </p>
-                        </div>
-                      </div>
-                      <p className="px-4 pb-3 text-sm leading-relaxed" style={{ color: "#c8d0e8" }}>
-                        {post.text}
-                      </p>
-                      <div className="flex items-center gap-4 px-4 py-3" style={{ borderTop: "1px solid #1e2240" }}>
-                        <button
-                          onClick={() => void toggleLike(post.id)}
-                          className="flex items-center gap-1.5 text-xs font-semibold"
-                          style={{ color: liked ? "#f472b6" : "#6b74a0" }}
+
+              {diaryPosts.length === 0 ? (
+                <div className="relative pb-2 pl-0">
+                  <span
+                    className="absolute -left-6 top-1.5 w-3.5 h-3.5 rounded-full z-10"
+                    style={{
+                      backgroundColor: "#0a0c14",
+                      border: "2px solid #2e3454",
+                    }}
+                  />
+                  <p className="text-xs py-2" style={{ color: "#3a4060" }}>
+                    Chưa có bài đăng — hãy chia sẻ khoảnh khắc đầu tiên
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-0">
+                  {diaryPosts.map((post, idx) => {
+                    const liked = !!post.likedByMe;
+                    const isLast = idx === diaryPosts.length - 1;
+                    return (
+                      <article key={post.id} className={`relative ${isLast ? "pb-2" : "pb-6"}`}>
+                        <span
+                          className="absolute -left-6 top-1.5 w-3.5 h-3.5 rounded-full z-10"
+                          style={{
+                            backgroundColor: "#0a0c14",
+                            border: "2px solid #6c63ff",
+                            boxShadow: "0 0 0 3px rgba(108,99,255,0.15)",
+                          }}
+                        />
+                        <p className="text-[11px] font-semibold mb-2" style={{ color: "#6b74a0" }}>
+                          {post.time}
+                        </p>
+                        <div
+                          className="rounded-2xl overflow-hidden"
+                          style={{ backgroundColor: "#111320", border: "1px solid #1e2240" }}
                         >
-                          <svg
-                            width="14"
-                            height="14"
-                            fill={liked ? "currentColor" : "none"}
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                            strokeWidth={2}
+                          {post.text ? (
+                            <p
+                              className="px-4 pt-3.5 pb-2 text-sm leading-relaxed"
+                              style={{ color: "#c8d0e8" }}
+                            >
+                              {post.text}
+                            </p>
+                          ) : null}
+                          {post.media && post.media.length > 0 ? (
+                            <div
+                              className={`px-4 ${post.text ? "pb-2" : "pt-3.5 pb-2"} grid gap-1.5 ${
+                                post.media.length === 1 ? "grid-cols-1" : "grid-cols-2"
+                              }`}
+                            >
+                              {post.media.map((m) => (
+                                <div
+                                  key={m.id}
+                                  className="overflow-hidden rounded-xl"
+                                  style={{ backgroundColor: "#0a0c14", border: "1px solid #1e2240" }}
+                                >
+                                  {m.type === "video" ? (
+                                    <video
+                                      src={m.url}
+                                      controls
+                                      playsInline
+                                      className="w-full max-h-56 object-cover"
+                                    />
+                                  ) : (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={m.url} alt="" className="w-full max-h-56 object-cover" />
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : post.image ? (
+                            <div className={`px-4 ${post.text ? "pb-2" : "pt-3.5 pb-2"}`}>
+                              <div className="rounded-xl overflow-hidden">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={post.image}
+                                  alt=""
+                                  className="w-full object-cover"
+                                  style={{ maxHeight: 200 }}
+                                />
+                              </div>
+                            </div>
+                          ) : null}
+                          <div
+                            className="flex items-center gap-4 px-4 py-2.5"
+                            style={{ borderTop: "1px solid #1e2240" }}
                           >
-                            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-                          </svg>
-                          {post.likes}
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })}
-                <button
-                  onClick={() => setShowPostModal(true)}
-                  className="w-full py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2"
-                  style={{ backgroundColor: "#111320", border: "1px dashed #2e3454", color: "#6b74a0" }}
-                >
-                  <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                  Thêm bài mới
-                </button>
-              </div>
-            )}
+                            <button
+                              onClick={() => void toggleLike(post.id)}
+                              className="flex items-center gap-1.5 text-xs font-semibold"
+                              style={{ color: liked ? "#f472b6" : "#6b74a0" }}
+                            >
+                              <svg
+                                width="14"
+                                height="14"
+                                fill={liked ? "currentColor" : "none"}
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                                strokeWidth={2}
+                              >
+                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                              </svg>
+                              {post.likes}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (post.id.startsWith("local-")) return;
+                                setCommentPostId(post.id);
+                              }}
+                              className="flex items-center gap-1.5 text-xs font-semibold"
+                              style={{ color: "#6b74a0" }}
+                            >
+                              💬 {post.commentCount || 0}
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
         {activeSection === "photos" && (
           <div className="pb-8">
-            <div className="grid grid-cols-3 gap-1.5 mb-4">
-              {MY_PHOTOS.map((id, i) => (
-                <div key={i} className="aspect-square rounded-xl overflow-hidden" style={{ backgroundColor: "#111320" }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={unsplash(id, 200, 200)} alt="" className="w-full h-full object-cover" />
-                </div>
-              ))}
-            </div>
+            {diaryImages.length === 0 ? (
+              <p className="text-xs py-6 text-center" style={{ color: "#3a4060" }}>
+                Chưa có ảnh nào trong nhật ký
+              </p>
+            ) : (
+              <div className="grid grid-cols-3 gap-1.5 mb-4">
+                {diaryImages.map((img) => (
+                  <div
+                    key={img.id}
+                    className="aspect-square rounded-xl overflow-hidden"
+                    style={{ backgroundColor: "#111320" }}
+                    title={img.time}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={img.url} alt="" className="w-full h-full object-cover" />
+                  </div>
+                ))}
+              </div>
+            )}
             <button
+              type="button"
+              onClick={() => openPostModal("image")}
               className="w-full py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2"
               style={{ backgroundColor: "#111320", border: "1px dashed #2e3454", color: "#6b74a0" }}
             >
@@ -408,45 +619,44 @@ export default function MyWall({ user }: { user: AuthUser }) {
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
-              Thêm ảnh
+              Đăng ảnh
             </button>
           </div>
         )}
 
         {activeSection === "videos" && (
           <div className="pb-8 space-y-3">
-            {MY_VIDEOS.map((v, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-3 p-3 rounded-2xl"
-                style={{ backgroundColor: "#111320", border: "1px solid #1e2240" }}
-              >
-                <div className="relative w-20 h-14 rounded-xl overflow-hidden flex-shrink-0">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={unsplash(v.thumb, 160, 112)} alt="" className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: "rgba(0,0,0,0.4)" }}>
-                    <svg width="20" height="20" fill="white" viewBox="0 0 24 24">
-                      <polygon points="5,3 19,12 5,21" />
-                    </svg>
+            {diaryVideos.length === 0 ? (
+              <p className="text-xs py-6 text-center" style={{ color: "#3a4060" }}>
+                Chưa có video nào trong nhật ký
+              </p>
+            ) : (
+              diaryVideos.map((v) => (
+                <div
+                  key={v.id}
+                  className="overflow-hidden rounded-2xl"
+                  style={{ backgroundColor: "#111320", border: "1px solid #1e2240" }}
+                >
+                  <video
+                    src={v.url}
+                    controls
+                    playsInline
+                    className="w-full max-h-64 object-cover bg-black"
+                  />
+                  <div className="px-3 py-2.5">
+                    <p className="text-sm font-semibold truncate" style={{ color: "#e8eaf2" }}>
+                      {v.text?.trim() || "Video nhật ký"}
+                    </p>
+                    <p className="text-xs" style={{ color: "#6b74a0" }}>
+                      {v.time}
+                    </p>
                   </div>
-                  <span
-                    className="absolute bottom-1 right-1 text-xs font-mono text-white px-1 rounded"
-                    style={{ backgroundColor: "rgba(0,0,0,0.6)", fontSize: "10px" }}
-                  >
-                    {v.duration}
-                  </span>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold truncate" style={{ color: "#e8eaf2" }}>
-                    {v.title}
-                  </p>
-                  <p className="text-xs" style={{ color: "#6b74a0" }}>
-                    Video · {v.duration}
-                  </p>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
             <button
+              type="button"
+              onClick={() => openPostModal("video")}
               className="w-full py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2"
               style={{ backgroundColor: "#111320", border: "1px dashed #2e3454", color: "#6b74a0" }}
             >
@@ -454,26 +664,28 @@ export default function MyWall({ user }: { user: AuthUser }) {
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
-              Tải video lên
+              Đăng video
             </button>
           </div>
         )}
       </div>
 
-      {showPostModal && (
+      {postMode && (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center"
           style={{ backgroundColor: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}
+          onClick={closePostModal}
         >
           <div
             className="w-full max-w-md rounded-t-3xl p-5 slide-up"
             style={{ backgroundColor: "#111320", border: "1px solid #1e2240" }}
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-extrabold text-base" style={{ color: "#e8eaf2" }}>
-                Đăng nhật ký
+                {postTitle}
               </h3>
-              <button onClick={() => setShowPostModal(false)} style={{ color: "#6b74a0" }}>
+              <button type="button" onClick={closePostModal} disabled={posting} style={{ color: "#6b74a0" }}>
                 <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
@@ -488,34 +700,133 @@ export default function MyWall({ user }: { user: AuthUser }) {
                 autoFocus
                 value={postText}
                 onChange={(e) => setPostText(e.target.value)}
-                placeholder="Bạn đang nghĩ gì vậy?"
+                placeholder={postPlaceholder}
                 rows={4}
+                disabled={posting}
                 className="flex-1 bg-transparent outline-none text-sm resize-none"
                 style={{ color: "#e8eaf2" }}
               />
             </div>
+
+            {pending.length > 0 && (
+              <div className="mb-4 grid grid-cols-3 gap-2">
+                {pending.map((item) => (
+                  <div
+                    key={item.id}
+                    className="relative overflow-hidden rounded-xl aspect-square"
+                    style={{ backgroundColor: "#0a0c14", border: "1px solid #1e2240" }}
+                  >
+                    {item.kind === "video" ? (
+                      <video src={item.previewUrl} className="h-full w-full object-cover" muted playsInline />
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={item.previewUrl} alt="" className="h-full w-full object-cover" />
+                    )}
+                    <span
+                      className="absolute left-1.5 bottom-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                      style={{ backgroundColor: "rgba(0,0,0,0.55)", color: "#e8eaf2" }}
+                    >
+                      {item.kind === "video" ? "Video" : "Ảnh"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removePending(item.id)}
+                      disabled={posting}
+                      className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
+                      style={{ backgroundColor: "rgba(0,0,0,0.65)", color: "#fff" }}
+                      aria-label="Xóa"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {postError ? (
+              <p
+                className="text-xs mb-3 rounded-xl px-3 py-2"
+                style={{ backgroundColor: "rgba(239,68,68,0.12)", color: "#f87171" }}
+              >
+                {postError}
+              </p>
+            ) : null}
+
+            {allowImages ? (
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept={IMAGE_ACCEPT}
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  addFiles(e.target.files, "image");
+                  e.target.value = "";
+                }}
+              />
+            ) : null}
+            {allowVideos ? (
+              <input
+                ref={videoInputRef}
+                type="file"
+                accept={VIDEO_ACCEPT}
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  addFiles(e.target.files, "video");
+                  e.target.value = "";
+                }}
+              />
+            ) : null}
+
             <div className="flex items-center gap-2 pt-3" style={{ borderTop: "1px solid #1e2240" }}>
-              <button className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs" style={{ color: "#6b74a0", backgroundColor: "#1a1d2e" }}>
-                <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                  <circle cx="8.5" cy="8.5" r="1.5" />
-                  <path d="M21 15l-5-5L5 21" />
-                </svg>
-                Ảnh
-              </button>
-              <button className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs" style={{ color: "#6b74a0", backgroundColor: "#1a1d2e" }}>
-                <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <polygon points="23 7 16 12 23 17 23 7" />
-                  <rect x="1" y="5" width="15" height="14" rx="2" />
-                </svg>
-                Video
-              </button>
+              {allowImages ? (
+                <button
+                  type="button"
+                  onClick={() => imageInputRef.current?.click()}
+                  disabled={posting || pending.length >= MAX_MEDIA}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs"
+                  style={{ color: "#6b74a0", backgroundColor: "#1a1d2e" }}
+                >
+                  <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <path d="M21 15l-5-5L5 21" />
+                  </svg>
+                  Ảnh
+                </button>
+              ) : null}
+              {allowVideos ? (
+                <button
+                  type="button"
+                  onClick={() => videoInputRef.current?.click()}
+                  disabled={posting || pending.length >= MAX_MEDIA}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs"
+                  style={{ color: "#6b74a0", backgroundColor: "#1a1d2e" }}
+                >
+                  <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <polygon points="23 7 16 12 23 17 23 7" />
+                    <rect x="1" y="5" width="15" height="14" rx="2" />
+                  </svg>
+                  Video
+                </button>
+              ) : null}
+              <span className="text-[11px] flex-1" style={{ color: "#3a4060" }}>
+                {pending.length > 0
+                  ? `${pending.length}/${MAX_MEDIA}`
+                  : postMode === "image"
+                    ? "Chọn ít nhất 1 ảnh"
+                    : postMode === "video"
+                      ? "Chọn ít nhất 1 video"
+                      : ""}
+              </span>
               <button
+                type="button"
                 onClick={() => void submitPost()}
-                disabled={!postText.trim() || posting}
-                className="ml-auto px-5 py-2 rounded-xl text-xs font-bold transition-all"
+                disabled={!canSubmitPost}
+                className="px-5 py-2 rounded-xl text-xs font-bold transition-all"
                 style={
-                  postText.trim() && !posting
+                  canSubmitPost
                     ? {
                         background: "linear-gradient(135deg, #6c63ff, #5b54e8)",
                         color: "#fff",
@@ -529,6 +840,23 @@ export default function MyWall({ user }: { user: AuthUser }) {
             </div>
           </div>
         </div>
+      )}
+
+      {commentPostId && (
+        <CommentSheet
+          postId={commentPostId}
+          open
+          onClose={() => setCommentPostId(null)}
+          onCommented={() => {
+            setDiaryPosts((prev) =>
+              prev.map((p) =>
+                p.id === commentPostId
+                  ? { ...p, commentCount: (p.commentCount || 0) + 1 }
+                  : p,
+              ),
+            );
+          }}
+        />
       )}
     </div>
   );
