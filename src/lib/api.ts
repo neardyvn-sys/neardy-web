@@ -348,6 +348,17 @@ export const usersApi = {
   get: (id: string) => api<MeProfile>(`/v1/users/${id}`),
 };
 
+export type IceServerConfig = {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
+};
+
+export const callsApi = {
+  iceConfig: () =>
+    api<{ ice_servers: IceServerConfig[] }>("/v1/calls/ice-config"),
+};
+
 export type PresenceStatus = {
   user_id: string;
   online: boolean;

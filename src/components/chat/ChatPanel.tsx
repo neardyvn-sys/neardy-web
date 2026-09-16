@@ -337,7 +337,16 @@ export default function ChatPanel({
         setTimeout(() => setTyping(false), 1500);
       }
       if (msg.type === "error") {
-        setError(String(msg.error || msg.message || "Không gửi được tin nhắn"));
+        const errText = String(msg.error || msg.message || "");
+        // Call/WebRTC signaling errors belong in the call overlay, not chat.
+        if (
+          /call|webrtc|sdp|candidate|microphone|micro/i.test(errText) ||
+          errText.includes("not active") ||
+          errText.includes("not ringing")
+        ) {
+          return;
+        }
+        setError(errText || "Không gửi được tin nhắn");
       }
     });
 
