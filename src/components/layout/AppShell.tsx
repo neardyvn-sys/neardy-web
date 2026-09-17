@@ -27,6 +27,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const hideChrome =
     pathname.startsWith("/messages/") ||
+    pathname.startsWith("/feed/") ||
     pathname.startsWith("/wall/") ||
     pathname.startsWith("/friends/") ||
     pathname.startsWith("/profile/security") ||
@@ -34,6 +35,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/profile/location") ||
     pathname.startsWith("/profile/privacy");
   const fullBleed =
+    pathname.startsWith("/feed/") ||
     pathname.startsWith("/wall/") ||
     pathname.startsWith("/friends/") ||
     pathname.startsWith("/profile/security") ||

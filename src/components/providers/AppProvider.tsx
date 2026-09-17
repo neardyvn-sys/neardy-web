@@ -114,6 +114,7 @@ function mapMatches(
     lastMessage: m.last_message || undefined,
     lastMessageAt: m.last_message_at || undefined,
     unread: m.unread_count || 0,
+    online: m.online === true,
   }));
 }
 
@@ -177,7 +178,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           avatar: initialsFromName(u.display_name),
           status: u.bio || "Đang ở gần bạn",
           distanceKm: u.distance_km,
-          online: u.show_online !== false,
+          online: u.online === true,
           bio: u.bio || "",
           age: u.age ?? undefined,
           gender: u.gender,
@@ -320,6 +321,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setMatches((prev) =>
         prev.map((m) => (m.conversationId === conversationId ? { ...m, unread: 0 } : m)),
       );
+      return;
+    }
+
+    if (type === "presence.update") {
+      const updateUserId = String(msg.user_id || "");
+      const isOnline = Boolean(msg.online);
+      if (updateUserId) {
+        setUsers((prev) =>
+          prev.map((u) => (u.id === updateUserId ? { ...u, online: isOnline } : u)),
+        );
+        setMatches((prev) =>
+          prev.map((m) => (m.userId === updateUserId ? { ...m, online: isOnline } : m)),
+        );
+      }
       return;
     }
 

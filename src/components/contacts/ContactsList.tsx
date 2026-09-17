@@ -265,7 +265,7 @@ export default function ContactsList() {
                 userId={m.userId}
                 size="md"
                 photoUrl={m.primaryPhoto}
-                online
+                online={m.online}
               />
             </button>
             <div className="flex-1 min-w-0">

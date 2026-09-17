@@ -61,7 +61,7 @@ export default function MessagesList() {
                 userId={m.userId}
                 size="lg"
                 photoUrl={m.primaryPhoto}
-                online
+                online={m.online}
               />
               <div className="flex-1 min-w-0 text-left">
                 <div className="flex items-center justify-between mb-0.5 gap-2">

@@ -13,6 +13,12 @@ import { privacySummary } from "@/lib/privacy";
 
 const SETTINGS = [
   {
+    icon: "👤",
+    label: "Thông tin cá nhân",
+    sub: "Tên, ngày sinh, giới tính, sở thích",
+    href: "/profile/info",
+  },
+  {
     icon: "🛡️",
     label: "Tài khoản & Bảo mật",
     sub: "Email, mật khẩu, mã QR",

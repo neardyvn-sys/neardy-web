@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/ui/Avatar";
 import CommentSheet from "@/components/feed/CommentSheet";
+import EditPostModal from "@/components/feed/EditPostModal";
+import ImageViewer, { type MediaItem } from "@/components/ui/ImageViewer";
+import { useApp } from "@/components/providers/AppProvider";
 import { feedApi, uploadsApi } from "@/lib/api";
 import type { FeedPost } from "@/lib/types";
 import { initialsFromName } from "@/lib/types";
@@ -36,7 +39,13 @@ function mediaGridClass(count: number) {
   return "grid-cols-2";
 }
 
-function PostMediaGrid({ media }: { media: FeedPost["media"] }) {
+function PostMediaGrid({
+  media,
+  onMediaClick,
+}: {
+  media: FeedPost["media"];
+  onMediaClick?: (index: number) => void;
+}) {
   if (!media.length) return null;
   return (
     <div className={`mx-4 mb-3 grid gap-1.5 ${mediaGridClass(media.length)}`}>
@@ -46,8 +55,16 @@ function PostMediaGrid({ media }: { media: FeedPost["media"] }) {
         return (
           <div
             key={item.id || `${item.url}-${i}`}
-            className={`overflow-hidden rounded-xl ${spanFull ? "col-span-2" : ""}`}
+            className={`overflow-hidden rounded-xl ${spanFull ? "col-span-2" : ""} ${
+              onMediaClick ? "cursor-pointer" : ""
+            }`}
             style={{ backgroundColor: "#0a0c14", border: "1px solid #1e2240" }}
+            onClick={(e) => {
+              if (onMediaClick) {
+                e.stopPropagation();
+                onMediaClick(i);
+              }
+            }}
           >
             {item.type === "video" ? (
               <video
@@ -75,6 +92,7 @@ function PostMediaGrid({ media }: { media: FeedPost["media"] }) {
 
 export default function FeedList() {
   const router = useRouter();
+  const { user } = useApp();
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [body, setBody] = useState("");
   const [pending, setPending] = useState<PendingMedia[]>([]);
@@ -82,10 +100,27 @@ export default function FeedList() {
   const [posting, setPosting] = useState(false);
   const [error, setError] = useState("");
   const [commentPostId, setCommentPostId] = useState<string | null>(null);
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [editingPost, setEditingPost] = useState<FeedPost | null>(null);
+  const [viewerMedia, setViewerMedia] = useState<{
+    media: MediaItem[];
+    index: number;
+  } | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
 
   const canSubmit = (!!body.trim() || pending.length > 0) && !posting;
+
+  const handleDeletePost = async (postId: string) => {
+    if (!confirm("Bạn có chắc chắn muốn xóa bài viết này không?")) return;
+    try {
+      await feedApi.delete(postId);
+      setPosts((prev) => prev.filter((p) => p.id !== postId));
+      setActiveMenuId(null);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Xóa bài viết thất bại");
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -351,59 +386,122 @@ export default function FeedList() {
 
       {loading && <div className="skeleton h-32 rounded-2xl" />}
 
-      {posts.map((post) => (
-        <article
-          key={post.id}
-          className="rounded-2xl overflow-hidden"
-          style={{ backgroundColor: "#111320", border: "1px solid #1e2240" }}
-        >
-          <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
-            <button onClick={() => router.push(`/wall/${post.userId}`)}>
-              <Avatar
-                initials={initialsFromName(post.displayName)}
-                userId={post.userId}
-                size="md"
-                photoUrl={post.primaryPhoto}
-              />
-            </button>
-            <div className="flex-1 min-w-0">
-              <button
-                onClick={() => router.push(`/wall/${post.userId}`)}
-                className="text-xs font-bold hover:underline text-left"
-                style={{ color: "#e8eaf2" }}
-              >
-                {post.displayName}
+      {posts.map((post) => {
+        const isAuthor = user && user.id === post.userId;
+        return (
+          <article
+            key={post.id}
+            className="rounded-2xl overflow-hidden relative"
+            style={{ backgroundColor: "#111320", border: "1px solid #1e2240" }}
+          >
+            <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
+              <button onClick={() => router.push(`/wall/${post.userId}`)}>
+                <Avatar
+                  initials={initialsFromName(post.displayName)}
+                  userId={post.userId}
+                  size="md"
+                  photoUrl={post.primaryPhoto}
+                />
               </button>
-              <p className="text-xs" style={{ color: "#3a4060" }}>
-                {timeAgo(post.createdAt)}
-              </p>
+              <div className="flex-1 min-w-0">
+                <button
+                  onClick={() => router.push(`/wall/${post.userId}`)}
+                  className="text-xs font-bold hover:underline text-left"
+                  style={{ color: "#e8eaf2" }}
+                >
+                  {post.displayName}
+                </button>
+                <p className="text-xs" style={{ color: "#3a4060" }}>
+                  {timeAgo(post.createdAt)}
+                </p>
+              </div>
+
+              {isAuthor && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveMenuId((cur) => (cur === post.id ? null : post.id));
+                    }}
+                    className="p-1.5 rounded-xl hover:bg-[#1a1d2e] text-xs font-bold"
+                    style={{ color: "#6b74a0" }}
+                  >
+                    •••
+                  </button>
+
+                  {activeMenuId === post.id && (
+                    <div
+                      className="absolute right-0 mt-1 z-20 rounded-xl overflow-hidden shadow-lg text-xs"
+                      style={{ backgroundColor: "#161929", border: "1px solid #1e2240", minWidth: 140 }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveMenuId(null);
+                          setEditingPost(post);
+                        }}
+                        className="w-full px-3.5 py-2.5 text-left hover:bg-[#1a1d2e]"
+                        style={{ color: "#e8eaf2" }}
+                      >
+                        ✏️ Chỉnh sửa bài viết
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveMenuId(null);
+                          void handleDeletePost(post.id);
+                        }}
+                        className="w-full px-3.5 py-2.5 text-left hover:bg-[#1a1d2e]"
+                        style={{ color: "#f87171" }}
+                      >
+                        🗑️ Xóa bài viết
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          </div>
-          {post.body ? (
-            <p className="px-4 pb-3 text-sm leading-relaxed" style={{ color: "#c8d0e8" }}>
-              {post.body}
-            </p>
-          ) : null}
-          <PostMediaGrid media={post.media} />
-          <div className="flex items-center gap-4 px-4 py-3" style={{ borderTop: "1px solid #1e2240" }}>
-            <button
-              onClick={() => void toggleLike(post.id)}
-              className="flex items-center gap-1.5 text-xs font-semibold"
-              style={{ color: post.likedByMe ? "#f472b6" : "#6b74a0" }}
+
+            <div
+              className="cursor-pointer"
+              onClick={() => router.push(`/feed/${post.id}`)}
             >
-              ♥ {post.likeCount}
-            </button>
-            <button
-              type="button"
-              onClick={() => setCommentPostId(post.id)}
-              className="flex items-center gap-1.5 text-xs font-semibold"
-              style={{ color: "#6b74a0" }}
-            >
-              💬 {post.commentCount}
-            </button>
-          </div>
-        </article>
-      ))}
+              {post.body ? (
+                <p className="px-4 pb-3 text-sm leading-relaxed" style={{ color: "#c8d0e8" }}>
+                  {post.body}
+                </p>
+              ) : null}
+              <PostMediaGrid
+                media={post.media}
+                onMediaClick={(idx) => setViewerMedia({ media: post.media, index: idx })}
+              />
+            </div>
+
+            <div className="flex items-center gap-4 px-4 py-3" style={{ borderTop: "1px solid #1e2240" }}>
+              <button
+                onClick={() => void toggleLike(post.id)}
+                className="flex items-center gap-1.5 text-xs font-semibold"
+                style={{ color: post.likedByMe ? "#f472b6" : "#6b74a0" }}
+              >
+                ♥ {post.likeCount}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCommentPostId(post.id);
+                }}
+                className="flex items-center gap-1.5 text-xs font-semibold"
+                style={{ color: "#6b74a0" }}
+              >
+                💬 {post.commentCount}
+              </button>
+            </div>
+          </article>
+        );
+      })}
 
       {!loading && posts.length === 0 && (
         <div className="text-center py-16">
@@ -426,6 +524,26 @@ export default function FeedList() {
               ),
             );
           }}
+        />
+      )}
+
+      {editingPost && (
+        <EditPostModal
+          open={!!editingPost}
+          post={editingPost}
+          onClose={() => setEditingPost(null)}
+          onSave={(updated) => {
+            setPosts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+          }}
+        />
+      )}
+
+      {viewerMedia && (
+        <ImageViewer
+          media={viewerMedia.media}
+          initialIndex={viewerMedia.index}
+          open={!!viewerMedia}
+          onClose={() => setViewerMedia(null)}
         />
       )}
     </div>

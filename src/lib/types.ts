@@ -39,6 +39,7 @@ export interface MatchItem {
   lastMessage?: string;
   lastMessageAt?: string;
   unread?: number;
+  online?: boolean;
 }
 
 export interface FeedPost {

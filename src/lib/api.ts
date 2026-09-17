@@ -179,6 +179,7 @@ export const nearbyApi = {
         age: number | null;
         distance_km: number | null;
         show_online?: boolean;
+        online?: boolean;
         primary_photo: string | null;
       }[];
     }>(`/v1/nearby?${q.toString()}`);
@@ -213,6 +214,7 @@ export const likesApi = {
         last_message?: string | null;
         last_message_at?: string | null;
         last_message_type?: string | null;
+        online?: boolean;
       }[];
     }>("/v1/matches"),
   messages: (conversationId: string) =>
@@ -295,6 +297,37 @@ export const feedApi = {
       method: "POST",
       body: JSON.stringify({ body, media }),
     }),
+  get: (id: string) =>
+    api<{
+      id: string;
+      body: string;
+      created_at: string;
+      user_id: string;
+      display_name: string;
+      primary_photo: string | null;
+      media: { id: string; type: string; url: string }[];
+      like_count: number;
+      comment_count: number;
+      liked_by_me: boolean;
+    }>(`/v1/posts/${id}`),
+  update: (id: string, body: string) =>
+    api<{
+      id: string;
+      body: string;
+      created_at: string;
+      user_id: string;
+      display_name: string;
+      primary_photo: string | null;
+      media: { id: string; type: string; url: string }[];
+      like_count: number;
+      comment_count: number;
+      liked_by_me: boolean;
+    }>(`/v1/posts/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ body }),
+    }),
+  delete: (id: string) =>
+    api<{ deleted: boolean; id: string }>(`/v1/posts/${id}`, { method: "DELETE" }),
   like: (id: string) => api<{ liked: boolean }>(`/v1/posts/${id}/likes`, { method: "POST" }),
   comments: (id: string) =>
     api<{
