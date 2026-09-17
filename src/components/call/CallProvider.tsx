@@ -12,14 +12,14 @@ import {
 } from "react";
 import CallOverlay from "@/components/call/CallOverlay";
 import { useApp } from "@/components/providers/AppProvider";
-import { callsApi, presenceApi, usersApi, type MeProfile } from "@/lib/api";
+import { callsApi, presenceApi, usersApi, webrtcApi, type MeProfile } from "@/lib/api";
 import {
-  initialsFromName,
-  type CallPeer,
-  type CallPhase,
-  type CallRole,
-  type CallType,
-} from "@/lib/types";
+  canMediaSignaling,
+  tryApplyCallEvent,
+  uiPhaseFromState,
+  type CallEvent,
+  type CallState,
+} from "@/lib/callStateMachine";
 import {
   classifyMediaError,
   mediaErrorMessage,
@@ -29,15 +29,19 @@ import {
   type MediaErrorKind,
 } from "@/lib/microphone";
 import { MediaCallSession } from "@/lib/webrtcAudio";
+import type { CallPhase, CallRole, CallType, CallPeer } from "@/lib/types";
+import { initialsFromName } from "@/lib/types";
 
 const RING_MS = 30_000;
 const DISCONNECT_GRACE_MS = 4_000;
-const DEFAULT_ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
+/** Last-resort STUN only (never TURN credentials — those come from the API). */
+const FALLBACK_STUN_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
 type ChatWsPayload = Record<string, unknown>;
 
 interface ActiveCall {
   phase: CallPhase;
+  fsmState: CallState;
   callId: string;
   conversationId: string;
   callType: CallType;
@@ -134,6 +138,29 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   callRef.current = call;
   pendingRef.current = pendingOutgoing;
+
+  const applyLocalEvent = useCallback((event: CallEvent): CallState | null => {
+    const current = callRef.current;
+    if (!current) return null;
+    const res = tryApplyCallEvent(current.fsmState, event);
+    if (!res.ok) {
+      if (res.error.code === "duplicate") return current.fsmState;
+      return null;
+    }
+    const nextState = res.result.to;
+    const ui = uiPhaseFromState(nextState, current.role);
+    const next: ActiveCall = {
+      ...current,
+      fsmState: nextState,
+      phase: ui === "idle" ? current.phase : ui,
+    };
+    callRef.current = next;
+    setCall(next);
+    if (nextState === "connecting") setConnStatus("connecting");
+    if (nextState === "connected") setConnStatus("connected");
+    if (nextState === "failed") setConnStatus("failed");
+    return nextState;
+  }, []);
 
   const clearRingTimer = useCallback(() => {
     if (ringTimerRef.current) {
@@ -245,12 +272,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
           conversation_id: current.conversationId,
           target_user_id: current.peer.id,
         });
+        applyLocalEvent("timeout");
         resetCall("Không có phản hồi");
       } else {
+        applyLocalEvent("timeout");
         resetCall();
       }
     }, RING_MS);
-  }, [clearRingTimer, resetCall, sendSignaling]);
+  }, [clearRingTimer, resetCall, sendSignaling, applyLocalEvent]);
 
   useEffect(() => {
     if (!call || (call.phase !== "outgoing" && call.phase !== "incoming")) {
@@ -301,11 +330,18 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   const loadIceServers = useCallback(async (): Promise<RTCIceServer[]> => {
     try {
-      const cfg = await callsApi.iceConfig();
+      // Fetch temporary TURN credentials immediately before creating RTCPeerConnection.
+      const cfg = await webrtcApi.iceServers();
       const servers = toRtcIceServers(cfg.ice_servers || []);
-      return servers.length > 0 ? servers : DEFAULT_ICE_SERVERS;
+      return servers.length > 0 ? servers : FALLBACK_STUN_SERVERS;
     } catch {
-      return DEFAULT_ICE_SERVERS;
+      try {
+        const legacy = await callsApi.iceConfig();
+        const servers = toRtcIceServers(legacy.ice_servers || []);
+        return servers.length > 0 ? servers : FALLBACK_STUN_SERVERS;
+      } catch {
+        return FALLBACK_STUN_SERVERS;
+      }
     }
   }, []);
 
@@ -313,6 +349,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     async (asOfferer: boolean): Promise<MediaCallSession | null> => {
       const current = callRef.current;
       if (!current || current.phase !== "active") return null;
+      if (!canMediaSignaling(current.fsmState)) return null;
       if (sessionRef.current) return sessionRef.current;
       if (sessionReadyRef.current) {
         return sessionReadyRef.current;
@@ -322,6 +359,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       const withVideo = current.callType === "video";
       let ready!: Promise<MediaCallSession | null>;
       ready = (async (): Promise<MediaCallSession | null> => {
+        applyLocalEvent("start_connecting");
         setConnStatus("connecting");
         const session = new MediaCallSession({
           onIceCandidate: (candidate) => {
@@ -340,18 +378,19 @@ export function CallProvider({ children }: { children: ReactNode }) {
           onConnectionState: (state) => {
             if (state === "connected") {
               clearDisconnectTimer();
+              applyLocalEvent("connected");
               setConnStatus("connected");
             } else if (state === "connecting") {
               setConnStatus("connecting");
             } else if (state === "failed") {
+              applyLocalEvent("ice_failure");
               setConnStatus("failed");
             } else if (state === "disconnected") {
               setConnStatus("connecting");
               clearDisconnectTimer();
               disconnectTimerRef.current = setTimeout(() => {
-                const pcState = sessionRef.current;
-                if (!pcState || !callRef.current) return;
-                // Still down after grace → treat as remote disconnect / ICE loss
+                if (!callRef.current) return;
+                applyLocalEvent("network_failure");
                 hangupAndReset("Đối phương đã ngắt kết nối", true);
               }, DISCONNECT_GRACE_MS);
             } else if (state === "closed") {
@@ -360,6 +399,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
           },
           onError: (code) => {
             if (code === "connection_failed") {
+              applyLocalEvent("ice_failure");
               hangupAndReset("Kết nối cuộc gọi thất bại", true);
             }
           },
@@ -401,7 +441,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       sessionReadyRef.current = ready;
       return ready;
     },
-    [clearDisconnectTimer, hangupAndReset, handleMediaFailure, loadIceServers, sendSignaling],
+    [clearDisconnectTimer, hangupAndReset, handleMediaFailure, loadIceServers, sendSignaling, applyLocalEvent],
   );
 
   const retryMedia = useCallback(() => {
@@ -439,6 +479,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         setPendingOutgoing(null);
         setCall({
           phase: "outgoing",
+          fsmState: "ringing",
           callId,
           conversationId: String(msg.conversation_id || pending.conversationId),
           callType: parseCallType(msg.call_type || pending.callType),
@@ -471,6 +512,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
           }
           setCall({
             phase: "incoming",
+            fsmState: "ringing",
             callId,
             conversationId,
             callType: parseCallType(msg.call_type),
@@ -488,7 +530,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
       if (type === "call.accept") {
         if (current.role === "caller") {
-          const next = { ...current, phase: "active" as const, startedAt: Date.now() };
+          applyLocalEvent("accept");
+          const after = callRef.current;
+          if (!after) return;
+          const next = {
+            ...after,
+            phase: "active" as const,
+            startedAt: Date.now(),
+          };
           callRef.current = next;
           setCall(next);
           void ensureWebRTC(true);
@@ -497,17 +546,20 @@ export function CallProvider({ children }: { children: ReactNode }) {
       }
 
       if (type === "call.reject") {
+        applyLocalEvent("reject");
         resetCall(current.role === "caller" ? `${current.peer.name} đã từ chối` : undefined);
         return;
       }
 
       if (type === "call.cancel") {
+        applyLocalEvent("cancel");
         resetCall(current.role === "callee" ? "Cuộc gọi đã bị huỷ" : undefined);
         return;
       }
 
       if (type === "call.end") {
         endingRef.current = true;
+        applyLocalEvent("hangup");
         resetCall("Cuộc gọi đã kết thúc");
         return;
       }
@@ -573,7 +625,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     });
 
     return unsubscribe;
-  }, [user, subscribeChatWs, loadPeer, resetCall, ensureWebRTC, sendSignaling, hangupAndReset, handleMediaFailure]);
+  }, [user, subscribeChatWs, loadPeer, resetCall, ensureWebRTC, sendSignaling, hangupAndReset, handleMediaFailure, applyLocalEvent]);
 
   // Prefetch device permissions while outgoing call is ringing.
   useEffect(() => {
@@ -583,6 +635,36 @@ export function CallProvider({ children }: { children: ReactNode }) {
       if (kind) setMediaError(kind);
     });
   }, [call?.callId, call?.phase, call?.role, call?.callType]);
+
+  // Browser close / tab hide while in a call
+  useEffect(() => {
+    const onPageHide = () => {
+      const current = callRef.current;
+      if (!current) return;
+      applyLocalEvent("browser_close");
+      sendSignaling({
+        type: current.fsmState === "ringing" ? (current.role === "caller" ? "call.cancel" : "call.reject") : "call.end",
+        call_id: current.callId,
+        conversation_id: current.conversationId,
+        target_user_id: current.peer.id,
+      });
+    };
+    window.addEventListener("pagehide", onPageHide);
+    return () => window.removeEventListener("pagehide", onPageHide);
+  }, [applyLocalEvent, sendSignaling]);
+
+  // Signaling WS drop during an active call
+  useEffect(() => {
+    if (!call || !user) return;
+    if (chatWsReady) return;
+    if (call.fsmState === "ringing") return; // ring path has its own timeout
+    const t = setTimeout(() => {
+      if (!callRef.current || chatWsReady) return;
+      applyLocalEvent("ws_disconnect");
+      hangupAndReset("Mất kết nối realtime", false);
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [chatWsReady, call, user, applyLocalEvent, hangupAndReset]);
 
   const startCall = useCallback(
     async (params: {
@@ -640,11 +722,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
       target_user_id: current.peer.id,
     });
     if (!ok) return;
-    const next = { ...current, phase: "active" as const, startedAt: Date.now() };
+    applyLocalEvent("accept");
+    const after = callRef.current;
+    if (!after) return;
+    const next = { ...after, phase: "active" as const, startedAt: Date.now() };
     callRef.current = next;
     setCall(next);
     void ensureWebRTC(false);
-  }, [sendSignaling, ensureWebRTC]);
+  }, [sendSignaling, ensureWebRTC, applyLocalEvent]);
 
   const rejectCall = useCallback(() => {
     const current = callRef.current;
@@ -655,8 +740,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
       conversation_id: current.conversationId,
       target_user_id: current.peer.id,
     });
+    applyLocalEvent("reject");
     resetCall();
-  }, [resetCall, sendSignaling]);
+  }, [resetCall, sendSignaling, applyLocalEvent]);
 
   const cancelCall = useCallback(() => {
     const current = callRef.current;
@@ -668,19 +754,21 @@ export function CallProvider({ children }: { children: ReactNode }) {
         conversation_id: current.conversationId,
         target_user_id: current.peer.id,
       });
+      applyLocalEvent("cancel");
       resetCall();
       return;
     }
     if (pending) {
       resetCall();
     }
-  }, [resetCall, sendSignaling]);
+  }, [resetCall, sendSignaling, applyLocalEvent]);
 
   const endCall = useCallback(() => {
     const current = callRef.current;
     if (!current || current.phase !== "active") return;
+    applyLocalEvent("hangup");
     hangupAndReset(undefined, true);
-  }, [hangupAndReset]);
+  }, [hangupAndReset, applyLocalEvent]);
 
   const toggleMute = useCallback(() => {
     setMuted((prev) => {

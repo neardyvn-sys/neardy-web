@@ -354,9 +354,20 @@ export type IceServerConfig = {
   credential?: string;
 };
 
+export type IceServersResponse = {
+  ice_servers: IceServerConfig[];
+  ttl: number;
+  expires_at: string;
+};
+
+/** Production ICE config — temporary TURN credentials from the API only. */
+export const webrtcApi = {
+  iceServers: () => api<IceServersResponse>("/api/webrtc/ice-servers"),
+};
+
+/** @deprecated use webrtcApi.iceServers */
 export const callsApi = {
-  iceConfig: () =>
-    api<{ ice_servers: IceServerConfig[] }>("/v1/calls/ice-config"),
+  iceConfig: () => webrtcApi.iceServers(),
 };
 
 export type PresenceStatus = {
