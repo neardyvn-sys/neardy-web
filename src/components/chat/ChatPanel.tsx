@@ -6,7 +6,7 @@ import Avatar from "@/components/ui/Avatar";
 import { useCall } from "@/components/call/CallProvider";
 import { useApp } from "@/components/providers/AppProvider";
 import { likesApi, uploadsApi } from "@/lib/api";
-import type { ChatMessage, ChatMsgType, NearbyUser } from "@/lib/types";
+import type { CallLogData, ChatMessage, ChatMsgType, NearbyUser } from "@/lib/types";
 
 const EMOJIS = [
   "😀", "😂", "🥰", "😍", "😎", "🤔", "🙌", "👏", "🔥", "💯",
@@ -47,6 +47,112 @@ function mapServerMessage(
   };
 }
 
+function parseCallLogData(text: string): CallLogData | null {
+  try {
+    if (text.startsWith("{")) {
+      return JSON.parse(text) as CallLogData;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+function formatCallSecs(seconds?: number) {
+  if (!seconds || seconds <= 0) return "";
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (m === 0) return `${s}s`;
+  return `${m}:${s < 10 ? "0" : ""}${s}`;
+}
+
+function CallLogBubble({
+  msg,
+  onCallBack,
+}: {
+  msg: ChatMessage;
+  onCallBack?: (callType: "audio" | "video") => void;
+}) {
+  const isMe = msg.from === "me";
+  const data = parseCallLogData(msg.text);
+  const callType = data?.call_type || "audio";
+  const status = data?.status || "ended";
+  const durationSec = data?.duration_seconds;
+  const isVideo = callType === "video";
+
+  let title = isVideo ? "Cuộc gọi video" : "Cuộc gọi thoại";
+  let statusText = "";
+  let icon = isVideo ? "📹" : "📞";
+  let isMissed = false;
+
+  switch (status) {
+    case "ended":
+    case "connected":
+      statusText = durationSec ? formatCallSecs(durationSec) : "Đã kết thúc";
+      break;
+    case "missed":
+      isMissed = true;
+      title = "Cuộc gọi nhỡ";
+      statusText = isMe ? "Đối phương không nghe máy" : "Bạn đã nhỡ cuộc gọi";
+      icon = "🔴";
+      break;
+    case "rejected":
+      title = "Cuộc gọi bị từ chối";
+      statusText = "Đã từ chối";
+      break;
+    case "cancelled":
+      title = "Cuộc gọi đã hủy";
+      statusText = "Đã hủy";
+      break;
+    default:
+      statusText = status;
+      break;
+  }
+
+  return (
+    <div
+      className={`px-3.5 py-2.5 rounded-2xl text-xs flex flex-col gap-1.5 ${
+        isMe ? "ml-auto" : "mr-auto"
+      }`}
+      style={{
+        backgroundColor: isMissed ? "rgba(239, 68, 68, 0.12)" : "#161929",
+        border: isMissed ? "1px solid rgba(239, 68, 68, 0.35)" : "1px solid #1e2240",
+        color: "#e8eaf2",
+        minWidth: "180px",
+        maxWidth: "240px",
+        borderBottomRightRadius: isMe ? "4px" : "16px",
+        borderBottomLeftRadius: !isMe ? "4px" : "16px",
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <span className="text-base">{icon}</span>
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-xs truncate" style={{ color: isMissed ? "#f87171" : "#e8eaf2" }}>
+            {title}
+          </p>
+          <p className="text-[11px]" style={{ color: "#a0a8c8" }}>
+            {statusText}
+          </p>
+        </div>
+      </div>
+      {!isMe && isMissed && onCallBack && (
+        <button
+          type="button"
+          onClick={() => onCallBack(callType)}
+          className="w-full mt-1 py-1 px-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all card-hover"
+          style={{
+            background: "linear-gradient(135deg, #6c63ff, #5b54e8)",
+            color: "#ffffff",
+          }}
+        >
+          <span>{isVideo ? "📹" : "📞"}</span>
+          <span>Gọi lại</span>
+        </button>
+      )}
+    </div>
+  );
+}
+
 function MessageBubble({
   msg,
   showRead,
@@ -54,6 +160,7 @@ function MessageBubble({
   onToggleMenu,
   onRecall,
   onHide,
+  onCallBack,
 }: {
   msg: ChatMessage;
   showRead?: boolean;
@@ -61,6 +168,7 @@ function MessageBubble({
   onToggleMenu: () => void;
   onRecall: () => void;
   onHide: () => void;
+  onCallBack?: (callType: "audio" | "video") => void;
 }) {
   const isMe = msg.from === "me";
   const type = msg.msgType || "text";
@@ -88,6 +196,8 @@ function MessageBubble({
           >
             Tin nhắn đã được thu hồi
           </button>
+        ) : type === "call_log" ? (
+          <CallLogBubble msg={msg} onCallBack={onCallBack} />
         ) : type === "image" && msg.mediaUrl ? (
           <button
             type="button"
@@ -616,6 +726,20 @@ export default function ChatPanel({
             onToggleMenu={() => setMenuMsgId((id) => (id === msg.id ? null : msg.id))}
             onRecall={() => recallMessage(msg.id)}
             onHide={() => hideMessage(msg.id)}
+            onCallBack={(callType) => {
+              if (!conversationId) return;
+              void startCall({
+                conversationId,
+                targetUserId: peer.id,
+                callType,
+                peer: {
+                  id: peer.id,
+                  name: peer.name,
+                  avatar: peer.avatar,
+                  photoUrl: peer.photoUrl,
+                },
+              });
+            }}
           />
         ))}
         {typing && (

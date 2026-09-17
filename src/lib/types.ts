@@ -58,7 +58,16 @@ export type FilterTab = "all" | "online";
 export type Tab = "nearby" | "messages" | "contacts" | "feed" | "profile";
 export type PermissionState = "loading" | "granted" | "denied";
 
-export type ChatMsgType = "text" | "image" | "video" | "emoji";
+export type ChatMsgType = "text" | "image" | "video" | "emoji" | "call_log";
+
+export interface CallLogData {
+  call_id?: string;
+  call_type?: "audio" | "video";
+  status?: "ended" | "missed" | "rejected" | "cancelled" | string;
+  duration_seconds?: number;
+  caller_id?: string;
+  callee_id?: string;
+}
 
 export interface ChatMessage {
   id: string;
