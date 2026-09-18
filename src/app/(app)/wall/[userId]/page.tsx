@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useApp } from "@/components/providers/AppProvider";
-import { usersApi } from "@/lib/api";
+import { usersApi, visitsApi } from "@/lib/api";
 import { initialsFromName } from "@/lib/types";
 import Avatar from "@/components/ui/Avatar";
 
@@ -20,6 +20,11 @@ export default function UserWallPage() {
   const [isOnline, setIsOnline] = useState(false);
   const match = matches.find((m) => m.userId === userId);
   const nearby = users.find((u) => u.id === userId);
+
+  useEffect(() => {
+    if (!userId) return;
+    visitsApi.record(userId).catch(() => {});
+  }, [userId]);
 
   useEffect(() => {
     usersApi

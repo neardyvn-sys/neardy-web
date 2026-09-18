@@ -481,9 +481,34 @@ export const uploadsApi = {
   },
 };
 
+export interface VisitorUser {
+  id: string;
+  display_name: string;
+  bio?: string;
+  gender?: string;
+  age?: number;
+  distance_km?: number;
+  primary_photo?: string;
+  show_online: boolean;
+  online: boolean;
+  visited_at: string;
+}
+
+export const visitsApi = {
+  record: (targetUserId: string) =>
+    api<{ recorded: boolean }>(`/v1/users/${targetUserId}/visit`, {
+      method: "POST",
+    }),
+  list: (page = 0, limit = 20) =>
+    api<{ visitors: VisitorUser[]; total_count: number; page: number; limit: number }>(
+      `/v1/me/visitors?page=${page}&limit=${limit}`,
+    ),
+};
+
 export function wsUrl() {
   const token = getAccessToken();
   return `${WS_URL}/v1/ws?token=${encodeURIComponent(token || "")}`;
 }
 
 export { API_URL };
+

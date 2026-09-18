@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/components/providers/AppProvider";
-import { feedApi, meApi } from "@/lib/api";
+import { feedApi, meApi, visitsApi } from "@/lib/api";
 import {
   loadNotificationPrefs,
   notificationPrefsSummary,
 } from "@/lib/notificationPrefs";
 import { locationSharingSummary } from "@/lib/locationPrefs";
 import { privacySummary } from "@/lib/privacy";
+import VisitorsSheet from "./VisitorsSheet";
 
 const SETTINGS = [
   {
@@ -50,6 +51,8 @@ export default function ProfilePanel() {
   const router = useRouter();
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [postCount, setPostCount] = useState(0);
+  const [visitorCount, setVisitorCount] = useState(0);
+  const [showVisitors, setShowVisitors] = useState(false);
   const [notifSub, setNotifSub] = useState("Bật tất cả");
   const [privacySub, setPrivacySub] = useState("Công khai");
 
@@ -62,15 +65,17 @@ export default function ProfilePanel() {
     let cancelled = false;
     (async () => {
       try {
-        const [profile, feed] = await Promise.all([
+        const [profile, feed, visitorsData] = await Promise.all([
           meApi.get(),
           feedApi.list({ userId: user.id, limit: 100 }),
+          visitsApi.list(0, 1).catch(() => ({ total_count: 0 })),
         ]);
         if (cancelled) return;
         const primary =
           profile.photos.find((p) => p.is_primary)?.url || profile.photos[0]?.url || null;
         setPhotoUrl(primary);
         setPostCount(feed.posts.length);
+        setVisitorCount(visitorsData.total_count || 0);
         if (profile.privacy) setPrivacySub(privacySummary(profile.privacy));
       } catch {
         // keep defaults
@@ -157,20 +162,37 @@ export default function ProfilePanel() {
         className="grid grid-cols-3 gap-px rounded-2xl overflow-hidden mb-5"
         style={{ backgroundColor: "#1e2240" }}
       >
-        {[
-          { label: "Bạn bè", value: friends.size },
-          { label: "Bài viết", value: postCount },
-          { label: "Lượt ghé thăm", value: 128 },
-        ].map((s) => (
-          <div key={s.label} className="flex flex-col items-center py-3.5" style={{ backgroundColor: "#111320" }}>
-            <span className="text-base font-extrabold" style={{ color: "#e8eaf2" }}>
-              {s.value}
-            </span>
-            <span className="text-xs" style={{ color: "#6b74a0" }}>
-              {s.label}
-            </span>
-          </div>
-        ))}
+        <div className="flex flex-col items-center py-3.5" style={{ backgroundColor: "#111320" }}>
+          <span className="text-base font-extrabold" style={{ color: "#e8eaf2" }}>
+            {friends.size}
+          </span>
+          <span className="text-xs" style={{ color: "#6b74a0" }}>
+            Bạn bè
+          </span>
+        </div>
+
+        <div className="flex flex-col items-center py-3.5" style={{ backgroundColor: "#111320" }}>
+          <span className="text-base font-extrabold" style={{ color: "#e8eaf2" }}>
+            {postCount}
+          </span>
+          <span className="text-xs" style={{ color: "#6b74a0" }}>
+            Bài viết
+          </span>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowVisitors(true)}
+          className="flex flex-col items-center py-3.5 hover:bg-[#191c30] transition-colors cursor-pointer"
+          style={{ backgroundColor: "#111320" }}
+        >
+          <span className="text-base font-extrabold text-[#00e5ff]">
+            {visitorCount}
+          </span>
+          <span className="text-xs flex items-center gap-1" style={{ color: "#6b74a0" }}>
+            Lượt ghé thăm
+          </span>
+        </button>
       </div>
 
       <div className="rounded-2xl overflow-hidden mb-3" style={{ border: "1px solid #1e2240" }}>
@@ -213,6 +235,13 @@ export default function ProfilePanel() {
       >
         Đăng xuất
       </button>
+
+      <VisitorsSheet
+        isOpen={showVisitors}
+        onClose={() => setShowVisitors(false)}
+        onUpdateTotalCount={(count) => setVisitorCount(count)}
+      />
     </div>
   );
 }
+
