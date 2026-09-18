@@ -292,7 +292,7 @@ export default function PostDetailPage({
                           type="button"
                           onClick={() => {
                             setMenuOpen(false);
-                            setEditOpen(true);
+                            router.push(`/feed/${post.id}/edit`);
                           }}
                           className="w-full px-4 py-2.5 text-left hover:bg-[#1a1d2e]"
                           style={{ color: "#e8eaf2" }}

@@ -310,7 +310,11 @@ export const feedApi = {
       comment_count: number;
       liked_by_me: boolean;
     }>(`/v1/posts/${id}`),
-  update: (id: string, body: string) =>
+  update: (
+    id: string,
+    body?: string,
+    media?: { type: "image" | "video"; url: string; sort_order: number }[],
+  ) =>
     api<{
       id: string;
       body: string;
@@ -324,7 +328,7 @@ export const feedApi = {
       liked_by_me: boolean;
     }>(`/v1/posts/${id}`, {
       method: "PATCH",
-      body: JSON.stringify({ body }),
+      body: JSON.stringify({ body, media }),
     }),
   delete: (id: string) =>
     api<{ deleted: boolean; id: string }>(`/v1/posts/${id}`, { method: "DELETE" }),

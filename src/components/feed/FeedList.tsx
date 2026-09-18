@@ -440,7 +440,7 @@ export default function FeedList() {
                         type="button"
                         onClick={() => {
                           setActiveMenuId(null);
-                          setEditingPost(post);
+                          router.push(`/feed/${post.id}/edit`);
                         }}
                         className="w-full px-3.5 py-2.5 text-left hover:bg-[#1a1d2e]"
                         style={{ color: "#e8eaf2" }}
