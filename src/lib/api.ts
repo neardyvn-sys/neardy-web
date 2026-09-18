@@ -196,7 +196,7 @@ export const nearbyApi = {
 export const likesApi = {
   like: (
     userId: string,
-    kind: "like" | "pass" = "like",
+    kind: "like" | "pass" | "superlike" = "like",
     opts?: { message?: string; hide_activity?: boolean },
   ) =>
     api<{ matched: boolean; match_id?: string; conversation_id?: string }>("/v1/likes", {

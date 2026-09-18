@@ -58,7 +58,7 @@ export interface FeedPost {
 }
 
 export type FilterTab = "all" | "online";
-export type Tab = "nearby" | "messages" | "contacts" | "feed" | "profile";
+export type Tab = "dating" | "nearby" | "messages" | "contacts" | "feed" | "profile";
 export type PermissionState = "loading" | "granted" | "denied";
 
 export type ChatMsgType = "text" | "image" | "video" | "emoji" | "call_log";
