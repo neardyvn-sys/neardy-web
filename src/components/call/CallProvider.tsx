@@ -357,8 +357,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
       const callId = current.callId;
       const withVideo = current.callType === "video";
-      let ready!: Promise<MediaCallSession | null>;
-      ready = (async (): Promise<MediaCallSession | null> => {
+      const ready: Promise<MediaCallSession | null> = (async (): Promise<MediaCallSession | null> => {
         applyLocalEvent("start_connecting");
         setConnStatus("connecting");
         const session = new MediaCallSession({
@@ -432,9 +431,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
           handleMediaFailure(err);
           return null;
         } finally {
-          if (sessionReadyRef.current === ready) {
-            sessionReadyRef.current = null;
-          }
+          sessionReadyRef.current = null;
         }
       })();
 

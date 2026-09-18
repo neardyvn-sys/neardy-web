@@ -32,7 +32,7 @@ export class ApiError extends Error {
   }
 }
 
-async function refreshAccess(): Promise<string | null> {
+export async function refreshAccess(): Promise<string | null> {
   const refresh = getRefreshToken();
   if (!refresh) return null;
   const res = await fetch(`${API_URL}/v1/auth/refresh`, {
@@ -120,6 +120,7 @@ export type MeProfile = {
   onboarding_completed: boolean;
   privacy?: PrivacySettings;
   photos: { id: string; url: string; is_primary: boolean }[];
+  online?: boolean;
 };
 
 export type PrivacySettings = {

@@ -31,7 +31,7 @@ export default function ChatPage() {
           avatar: initialsFromName(p.display_name),
           status: p.bio || "Người dùng Neardy",
           distanceKm: 0,
-          online: true,
+          online: Boolean(p.online),
           bio: p.bio || "",
           age: p.age,
           photoUrl: p.photos.find((x) => x.is_primary)?.url || p.photos[0]?.url || null,
@@ -46,21 +46,22 @@ export default function ChatPage() {
   }, [userId, nearby, match]);
 
   const peer: NearbyUser | null = (() => {
-    if (nearby) {
-      return { ...nearby, conversationId: match?.conversationId };
-    }
+    // Prefer match as it contains realtime presence and primary conversation
     if (match) {
       return {
         id: match.userId,
         name: match.displayName,
         avatar: initialsFromName(match.displayName),
         status: "Đã kết nối",
-        distanceKm: 0,
-        online: true,
-        bio: "",
-        photoUrl: match.primaryPhoto,
+        distanceKm: nearby?.distanceKm ?? 0,
+        online: Boolean(match.online),
+        bio: nearby?.bio || "",
+        photoUrl: match.primaryPhoto || nearby?.photoUrl || null,
         conversationId: match.conversationId,
       };
+    }
+    if (nearby) {
+      return { ...nearby };
     }
     if (fetched) {
       return { ...fetched };

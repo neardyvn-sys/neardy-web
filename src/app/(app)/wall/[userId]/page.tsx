@@ -11,13 +11,15 @@ export default function UserWallPage() {
   const params = useParams();
   const userId = String(params.userId);
   const router = useRouter();
-  const { friends, toggleFriend, matches } = useApp();
+  const { friends, toggleFriend, matches, users } = useApp();
   const [name, setName] = useState("");
   const [bio, setBio] = useState("");
   const [age, setAge] = useState<number | undefined>();
   const [photo, setPhoto] = useState<string | null>(null);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState(false);
   const match = matches.find((m) => m.userId === userId);
+  const nearby = users.find((u) => u.id === userId);
 
   useEffect(() => {
     usersApi
@@ -28,11 +30,23 @@ export default function UserWallPage() {
         setAge(p.age);
         setCoverUrl(p.cover_url || null);
         setPhoto(p.photos.find((x) => x.is_primary)?.url || p.photos[0]?.url || null);
+        if (typeof p.online === "boolean") {
+          setIsOnline(p.online);
+        }
       })
       .catch(() => {
         setName("Người dùng");
       });
   }, [userId]);
+
+  // Sync with matches and nearby realtime presence updates
+  useEffect(() => {
+    if (match && typeof match.online === "boolean") {
+      setIsOnline(match.online);
+    } else if (nearby && typeof nearby.online === "boolean") {
+      setIsOnline(nearby.online);
+    }
+  }, [match?.online, nearby?.online]);
 
   const coverBgStyle = coverUrl
     ? coverUrl.startsWith("http") || coverUrl.startsWith("/media") || coverUrl.startsWith("data:")
@@ -53,7 +67,7 @@ export default function UserWallPage() {
       </div>
       <div className="max-w-md mx-auto px-4">
         <div className="flex items-end justify-between -mt-10 mb-4">
-          <Avatar initials={initialsFromName(name || "?")} userId={userId} size="xl" photoUrl={photo} online />
+          <Avatar initials={initialsFromName(name || "?")} userId={userId} size="xl" photoUrl={photo} online={isOnline} />
           <div className="flex gap-2 pb-1">
             {match && (
               <button

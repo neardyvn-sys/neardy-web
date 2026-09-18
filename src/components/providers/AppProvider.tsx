@@ -23,9 +23,11 @@ import {
   clearTokens,
   feedApi,
   getAccessToken,
+  getRefreshToken,
   likesApi,
   meApi,
   nearbyApi,
+  refreshAccess,
   setTokens,
   wsUrl,
   type MeProfile,
@@ -361,19 +363,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Proactively refresh access token every 10 minutes to stay fresh
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(async () => {
+      if (getRefreshToken()) {
+        try {
+          await refreshAccess();
+        } catch (e) {
+          console.warn("Silent token refresh failed", e);
+        }
+      }
+    }, 10 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [user]);
+
   useEffect(() => {
     if (!user) {
       setChatWsReady(false);
-      wsRef.current?.close();
-      wsRef.current = null;
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.onerror = null;
+        wsRef.current.close();
+        wsRef.current = null;
+      }
       return;
     }
 
     let closed = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const connect = () => {
+    const connect = async () => {
       if (closed) return;
+      let token = getAccessToken();
+      if (!token && getRefreshToken()) {
+        token = await refreshAccess();
+      }
+      if (!token || closed) return;
+
       const ws = new WebSocket(wsUrl());
       wsRef.current = ws;
 
@@ -395,8 +422,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ws.onclose = () => {
         setChatWsReady(false);
         wsRef.current = null;
-        if (!closed) {
-          reconnectTimer = setTimeout(connect, 2000);
+        if (!closed && getAccessToken()) {
+          reconnectTimer = setTimeout(async () => {
+            if (getRefreshToken()) {
+              await refreshAccess();
+            }
+            void connect();
+          }, 2000);
         }
       };
 
@@ -405,14 +437,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       };
     };
 
-    connect();
+    void connect();
 
     return () => {
       closed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       setChatWsReady(false);
-      wsRef.current?.close();
-      wsRef.current = null;
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.onerror = null;
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
   }, [user?.id, applyInboxEvent]);
 
