@@ -52,6 +52,7 @@ interface AppContextValue {
   subscribeChatWs: (listener: ChatWsListener) => () => void;
   refreshNearby: (filters?: NearbyFilters) => Promise<void>;
   refreshMatches: () => Promise<void>;
+  refreshUser: () => Promise<void>;
   loginWithPassword: (email: string, password: string, displayName?: string) => Promise<void>;
   logout: () => Promise<void>;
   toggleFriend: (id: string) => Promise<{ conversationId?: string; matched: boolean }>;
@@ -61,12 +62,15 @@ interface AppContextValue {
 const AppContext = createContext<AppContextValue | null>(null);
 
 function profileToAuth(p: MeProfile): AuthUser {
+  const primary = p.photos?.find((x) => x.is_primary)?.url || p.photos?.[0]?.url || null;
   return {
     id: p.id,
     name: p.display_name,
     email: p.email,
     avatar: initialsFromName(p.display_name),
     bio: p.bio || undefined,
+    primaryPhoto: primary,
+    coverUrl: p.cover_url || null,
     onboardingCompleted: p.onboarding_completed,
   };
 }
@@ -478,6 +482,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setUsers((prev) => prev.filter((u) => u.id !== id));
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    try {
+      const profile = await meApi.get();
+      setUser(profileToAuth(profile));
+    } catch (err) {
+      console.warn("refreshUser error", err);
+    }
+  }, []);
+
   const value = useMemo(
     () => ({
       user,
@@ -497,6 +510,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       subscribeChatWs,
       refreshNearby,
       refreshMatches,
+      refreshUser,
       loginWithPassword,
       logout,
       toggleFriend,
@@ -520,6 +534,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       subscribeChatWs,
       refreshNearby,
       refreshMatches,
+      refreshUser,
       loginWithPassword,
       logout,
       toggleFriend,

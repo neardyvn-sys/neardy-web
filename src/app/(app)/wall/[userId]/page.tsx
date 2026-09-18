@@ -16,6 +16,7 @@ export default function UserWallPage() {
   const [bio, setBio] = useState("");
   const [age, setAge] = useState<number | undefined>();
   const [photo, setPhoto] = useState<string | null>(null);
+  const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const match = matches.find((m) => m.userId === userId);
 
   useEffect(() => {
@@ -25,6 +26,7 @@ export default function UserWallPage() {
         setName(p.display_name);
         setBio(p.bio || "");
         setAge(p.age);
+        setCoverUrl(p.cover_url || null);
         setPhoto(p.photos.find((x) => x.is_primary)?.url || p.photos[0]?.url || null);
       })
       .catch(() => {
@@ -32,13 +34,19 @@ export default function UserWallPage() {
       });
   }, [userId]);
 
+  const coverBgStyle = coverUrl
+    ? coverUrl.startsWith("http") || coverUrl.startsWith("/media") || coverUrl.startsWith("data:")
+      ? { backgroundImage: `url(${coverUrl})`, backgroundSize: "cover", backgroundPosition: "center" }
+      : { background: coverUrl }
+    : { background: "linear-gradient(135deg, #2d1b69, #0f1a3d)" };
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#0a0c14", color: "#e8eaf2" }}>
-      <div className="relative h-44 bg-gradient-to-br from-violet-900 to-indigo-950">
+      <div className="relative h-44 transition-all" style={coverBgStyle}>
         <button
           onClick={() => router.back()}
-          className="absolute top-4 left-4 z-10 px-3 py-1.5 rounded-xl text-xs font-semibold"
-          style={{ backgroundColor: "rgba(0,0,0,0.4)", color: "#e8eaf2" }}
+          className="absolute top-4 left-4 z-10 px-3 py-1.5 rounded-xl text-xs font-semibold backdrop-blur"
+          style={{ backgroundColor: "rgba(0,0,0,0.45)", color: "#e8eaf2" }}
         >
           ← Quay lại
         </button>

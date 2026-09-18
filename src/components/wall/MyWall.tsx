@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { AuthUser, DiaryPost } from "@/lib/types";
 import { COVER_OPTIONS, COVER_STORAGE_KEY } from "@/lib/constants";
 import { feedApi, meApi, uploadsApi } from "@/lib/api";
+import { useApp } from "@/components/providers/AppProvider";
 import CommentSheet from "@/components/feed/CommentSheet";
 
 const MAX_MEDIA = 10;
@@ -80,6 +81,7 @@ function mapDiaryPosts(
 
 export default function MyWall({ user }: { user: AuthUser }) {
   const router = useRouter();
+  const { refreshUser } = useApp();
   const [cover, setCover] = useState(0);
   const [bio, setBio] = useState(user.bio || "Thích khám phá · Tìm bạn mới quanh đây 📍");
   const [editingBio, setEditingBio] = useState(false);
@@ -90,11 +92,15 @@ export default function MyWall({ user }: { user: AuthUser }) {
   const [posting, setPosting] = useState(false);
   const [postError, setPostError] = useState("");
   const [showCoverPicker, setShowCoverPicker] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
   const [activeSection, setActiveSection] = useState<"diary" | "photos" | "videos">("diary");
   const [commentPostId, setCommentPostId] = useState<string | null>(null);
   const bioRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
   const canSubmitPost =
     !posting &&
     (postMode === "image" || postMode === "video"
@@ -190,11 +196,58 @@ export default function MyWall({ user }: { user: AuthUser }) {
     });
   };
 
-  const saveCover = (i: number) => {
-    setCover(i);
-    localStorage.setItem(COVER_STORAGE_KEY, String(i));
-    setShowCoverPicker(false);
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploadingAvatar(true);
+    try {
+      const uploaded = await uploadsApi.file(file, "image");
+      await meApi.addPhoto({ url: uploaded.public_url, is_primary: true });
+      await refreshUser();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Đổi ảnh đại diện thất bại");
+    } finally {
+      setUploadingAvatar(false);
+    }
   };
+
+  const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploadingCover(true);
+    setShowCoverPicker(false);
+    try {
+      const uploaded = await uploadsApi.file(file, "image");
+      await meApi.patch({ cover_url: uploaded.public_url });
+      await refreshUser();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Tải ảnh bìa thất bại");
+    } finally {
+      setUploadingCover(false);
+    }
+  };
+
+  const handleSelectPresetCover = async (gradient: string, index: number) => {
+    setCover(index);
+    localStorage.setItem(COVER_STORAGE_KEY, String(index));
+    setShowCoverPicker(false);
+    try {
+      await meApi.patch({ cover_url: gradient });
+      await refreshUser();
+    } catch (err) {
+      console.warn("patch cover failed", err);
+    }
+  };
+
+  const coverBgStyle = user.coverUrl
+    ? user.coverUrl.startsWith("http") ||
+      user.coverUrl.startsWith("/media") ||
+      user.coverUrl.startsWith("data:")
+      ? { backgroundImage: `url(${user.coverUrl})`, backgroundSize: "cover", backgroundPosition: "center" }
+      : { background: user.coverUrl }
+    : { background: COVER_OPTIONS[cover] || COVER_OPTIONS[0] };
 
   const saveBio = async () => {
     setEditingBio(false);
@@ -282,7 +335,24 @@ export default function MyWall({ user }: { user: AuthUser }) {
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#0a0c14", color: "#e8eaf2" }}>
-      <div className="relative h-52" style={{ background: COVER_OPTIONS[cover] }}>
+      {/* Hidden file inputs for avatar and cover */}
+      <input
+        ref={avatarInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        className="hidden"
+        onChange={handleAvatarChange}
+      />
+      <input
+        ref={coverInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        className="hidden"
+        onChange={handleCoverUpload}
+      />
+
+      {/* Cover Banner */}
+      <div className="relative h-52 transition-all" style={coverBgStyle}>
         <div
           className="absolute inset-0 opacity-10"
           style={{
@@ -304,52 +374,128 @@ export default function MyWall({ user }: { user: AuthUser }) {
 
         <button
           onClick={() => setShowCoverPicker(!showCoverPicker)}
-          className="absolute top-4 right-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold backdrop-blur"
-          style={{ backgroundColor: "rgba(0,0,0,0.45)", color: "#e8eaf2" }}
+          disabled={uploadingCover}
+          className="absolute top-4 right-4 z-10 flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold backdrop-blur shadow-lg transition-transform hover:scale-105 active:scale-95"
+          style={{ backgroundColor: "rgba(0,0,0,0.6)", color: "#e8eaf2", border: "1px solid rgba(255,255,255,0.15)" }}
         >
-          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-          </svg>
-          Đổi ảnh bìa
+          {uploadingCover ? (
+            <>
+              <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              <span>Đang tải...</span>
+            </>
+          ) : (
+            <>
+              <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                <circle cx="12" cy="13" r="4" />
+              </svg>
+              Đổi ảnh bìa
+            </>
+          )}
         </button>
 
         {showCoverPicker && (
           <div
-            className="absolute top-14 right-4 z-20 flex gap-2 p-2 rounded-2xl slide-up"
-            style={{ backgroundColor: "#111320", border: "1px solid #1e2240" }}
+            className="absolute top-14 right-4 z-20 p-3.5 rounded-2xl slide-up shadow-2xl space-y-3"
+            style={{ backgroundColor: "#161929", border: "1px solid #1e2240", minWidth: 230 }}
+            onClick={(e) => e.stopPropagation()}
           >
-            {COVER_OPTIONS.map((opt, i) => (
-              <button
-                key={i}
-                onClick={() => saveCover(i)}
-                className="w-8 h-8 rounded-xl"
-                style={{ background: opt, border: cover === i ? "2px solid #6c63ff" : "2px solid transparent" }}
-              />
-            ))}
+            <button
+              type="button"
+              onClick={() => {
+                setShowCoverPicker(false);
+                coverInputRef.current?.click();
+              }}
+              disabled={uploadingCover}
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold hover:bg-[#1a1d2e] text-left transition-colors"
+              style={{ color: "#e8eaf2", backgroundColor: "#111320", border: "1px solid #1e2240" }}
+            >
+              <span className="text-sm">📷</span>
+              <span>Tải ảnh từ máy lên</span>
+            </button>
+
+            <div>
+              <p className="text-[11px] font-semibold mb-2 px-1" style={{ color: "#6b74a0" }}>
+                Mẫu màu gradient có sẵn:
+              </p>
+              <div className="grid grid-cols-5 gap-1.5">
+                {COVER_OPTIONS.map((opt, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => void handleSelectPresetCover(opt, i)}
+                    className="w-8 h-8 rounded-xl transition-transform hover:scale-105"
+                    style={{
+                      background: opt,
+                      border: user.coverUrl === opt ? "2px solid #6c63ff" : "1px solid #2e3454",
+                    }}
+                    title={`Mẫu ${i + 1}`}
+                  />
+                ))}
+              </div>
+            </div>
           </div>
         )}
       </div>
 
       <div className="px-4 max-w-md mx-auto">
         <div className="flex items-end justify-between -mt-12 mb-4">
+          {/* Avatar with Camera badge */}
           <div className="relative group">
             <div
-              className="w-24 h-24 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center text-2xl font-extrabold text-white"
-              style={{ border: "4px solid #0a0c14" }}
+              className="w-24 h-24 rounded-2xl overflow-hidden cursor-pointer relative"
+              style={{ border: "4px solid #0a0c14", backgroundColor: "#111320" }}
+              onClick={() => avatarInputRef.current?.click()}
             >
-              {user.avatar}
+              {user.primaryPhoto ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={user.primaryPhoto}
+                  alt={user.name}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center text-2xl font-extrabold text-white">
+                  {user.avatar}
+                </div>
+              )}
+
+              {/* Hover Overlay */}
+              <div
+                className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{ backgroundColor: "rgba(0,0,0,0.55)" }}
+              >
+                <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="white" strokeWidth={2}>
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                  <circle cx="12" cy="13" r="4" />
+                </svg>
+              </div>
             </div>
-            <div
-              className="absolute inset-0 rounded-2xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-              style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+
+            {/* Camera Badge button */}
+            <button
+              type="button"
+              onClick={() => avatarInputRef.current?.click()}
+              disabled={uploadingAvatar}
+              className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-110 active:scale-95"
+              style={{
+                backgroundColor: "#6c63ff",
+                border: "3px solid #0a0c14",
+                color: "#fff",
+              }}
+              title="Đổi ảnh đại diện"
             >
-              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="white" strokeWidth={2}>
-                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                <circle cx="12" cy="13" r="4" />
-              </svg>
-            </div>
+              {uploadingAvatar ? (
+                <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                  <circle cx="12" cy="13" r="4" />
+                </svg>
+              )}
+            </button>
           </div>
+
           <button
             onClick={() => openPostModal("diary")}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all"

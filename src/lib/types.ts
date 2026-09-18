@@ -26,6 +26,8 @@ export interface AuthUser {
   name: string;
   email: string;
   avatar: string;
+  primaryPhoto?: string | null;
+  coverUrl?: string | null;
   bio?: string;
   onboardingCompleted?: boolean;
 }

@@ -111,6 +111,7 @@ export type MeProfile = {
   email: string;
   display_name: string;
   bio: string | null;
+  cover_url?: string | null;
   birth_date?: string;
   age?: number;
   gender: string | null;
@@ -134,6 +135,11 @@ export const meApi = {
   get: () => api<MeProfile>("/v1/me"),
   patch: (body: Record<string, unknown>) =>
     api<MeProfile>("/v1/me", { method: "PATCH", body: JSON.stringify(body) }),
+  addPhoto: (body: { url: string; sort_order?: number; is_primary?: boolean }) =>
+    api<{ id: string; url: string; sort_order: number; is_primary: boolean }>("/v1/me/photos", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   setLocation: (lat: number, lng: number) =>
     api("/v1/me/location", { method: "PATCH", body: JSON.stringify({ lat, lng }) }),
   privacy: () => api<PrivacySettings>("/v1/me/privacy"),
