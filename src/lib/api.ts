@@ -505,10 +505,87 @@ export const visitsApi = {
     ),
 };
 
+export type AICompanion = {
+  id: string;
+  name: string;
+  slug: string;
+  gender: string | null;
+  avatar: string | null;
+  personality: string;
+  speaking_style: string;
+  is_active: boolean;
+  level: string;
+  affection_points: number;
+  next_level_points: number;
+};
+
+export type AIMessage = {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  created_at: string;
+};
+
+export const aiApi = {
+  companions: () => api<{ companions: AICompanion[] }>("/api/ai/companions"),
+  getCompanion: (id: string) => api<AICompanion>(`/api/ai/companions/${id}`),
+  messages: (convId: string) => api<{ messages: AIMessage[] }>(`/api/ai/conversations/${convId}/messages`),
+  streamChat: async (
+    payload: { companion_id: string; message: string; conversation_id?: string },
+    onChunk: (chunk: string) => void,
+    onError?: (err: string) => void,
+  ) => {
+    const token = getAccessToken();
+    const res = await fetch(`${API_URL}/api/ai/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      let errMsg = "Chat request failed";
+      try {
+        const parsed = JSON.parse(errText);
+        if (parsed.error) errMsg = parsed.error;
+      } catch {}
+      throw new ApiError(res.status, errMsg);
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) return;
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const dataStr = line.slice(6).trim();
+        if (dataStr === "[DONE]") break;
+        try {
+          const parsed = JSON.parse(dataStr);
+          if (parsed.chunk) onChunk(parsed.chunk);
+          if (parsed.error && onError) onError(parsed.error);
+        } catch {}
+      }
+    }
+  },
+};
+
 export function wsUrl() {
   const token = getAccessToken();
   return `${WS_URL}/v1/ws?token=${encodeURIComponent(token || "")}`;
 }
 
 export { API_URL };
+
 

@@ -14,6 +14,12 @@ import VisitorsSheet from "./VisitorsSheet";
 
 const SETTINGS = [
   {
+    icon: "🤖",
+    label: "AI Companion",
+    sub: "Bạn đồng hành ảo & Trợ lý trò chuyện",
+    href: "/ai-companions",
+  },
+  {
     icon: "👤",
     label: "Thông tin cá nhân",
     sub: "Tên, ngày sinh, giới tính, sở thích",

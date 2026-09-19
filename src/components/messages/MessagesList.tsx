@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/ui/Avatar";
 import { useApp } from "@/components/providers/AppProvider";
@@ -35,6 +36,32 @@ export default function MessagesList() {
 
   return (
     <div className="px-4 pb-4">
+      {/* AI Companion Quick Entry */}
+      <Link
+        href="/ai-companions"
+        className="mb-3 px-4 py-3 rounded-2xl flex items-center justify-between transition-all hover:opacity-90 active:scale-[0.99] block"
+        style={{
+          background: "linear-gradient(135deg, rgba(108,99,255,0.2), rgba(139,92,246,0.15))",
+          border: "1px solid rgba(108,99,255,0.3)",
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg bg-purple-900/60 text-white shrink-0">
+            🤖
+          </div>
+          <div>
+            <div className="text-xs font-bold text-slate-100 flex items-center gap-1.5">
+              <span>AI Companion</span>
+              <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-500/30 text-purple-300 font-bold">New</span>
+            </div>
+            <div className="text-[11px] text-purple-200/70">Trò chuyện & Tâm sự cùng trợ lý ảo</div>
+          </div>
+        </div>
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} className="text-purple-400">
+          <path d="M9 18l6-6-6-6" />
+        </svg>
+      </Link>
+
       {totalUnread > 0 && (
         <div
           className="mb-4 px-4 py-3 rounded-2xl flex items-center gap-2"
