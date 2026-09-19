@@ -19,6 +19,7 @@ const DEFAULT_FILTERS: Required<NearbyFilters> = {
   maxAge: 40,
   maxDistanceKm: 50,
   genders: [],
+  visibilityGender: "all",
 };
 
 function filtersActive(f: NearbyFilters) {
@@ -26,7 +27,35 @@ function filtersActive(f: NearbyFilters) {
     (f.minAge != null && f.minAge !== DEFAULT_FILTERS.minAge) ||
     (f.maxAge != null && f.maxAge !== DEFAULT_FILTERS.maxAge) ||
     (f.maxDistanceKm != null && f.maxDistanceKm !== DEFAULT_FILTERS.maxDistanceKm) ||
-    (f.genders != null && f.genders.length > 0)
+    (f.genders != null && f.genders.length > 0) ||
+    (f.visibilityGender != null && f.visibilityGender !== "all")
+  );
+}
+
+function renderGenderIcon(gender?: string | null) {
+  if (!gender) return null;
+  const g = gender.toLowerCase();
+  if (g === "woman" || g === "female") {
+    return (
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#ff4b72" strokeWidth="2.5" className="inline shrink-0">
+        <circle cx="12" cy="9" r="6" />
+        <path d="M12 15v7M9 19h6" />
+      </svg>
+    );
+  }
+  if (g === "man" || g === "male") {
+    return (
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#00e5ff" strokeWidth="2.5" className="inline shrink-0">
+        <circle cx="10" cy="14" r="6" />
+        <path d="M14 10l6-6M15 4h5v5" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#a855f7" strokeWidth="2.5" className="inline shrink-0">
+      <circle cx="12" cy="12" r="5" />
+      <path d="M12 7V2M9 4h6M16 16l4 4M17 19l2.5-2.5" />
+    </svg>
   );
 }
 
@@ -64,16 +93,7 @@ function FilterSheet({
   const maxAge = draft.maxAge ?? DEFAULT_FILTERS.maxAge;
   const maxDistanceKm = draft.maxDistanceKm ?? DEFAULT_FILTERS.maxDistanceKm;
   const genders = draft.genders ?? [];
-
-  const toggleGender = (g: NearbyGender) => {
-    setDraft((prev) => {
-      const cur = prev.genders ?? [];
-      return {
-        ...prev,
-        genders: cur.includes(g) ? cur.filter((x) => x !== g) : [...cur, g],
-      };
-    });
-  };
+  const visibilityGender = draft.visibilityGender ?? "all";
 
   return (
     <div
@@ -82,7 +102,7 @@ function FilterSheet({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md flex flex-col slide-up"
+        className="w-full max-w-md flex flex-col slide-up max-h-[85vh]"
         style={{
           backgroundColor: "#111320",
           border: "1px solid #1e2240",
@@ -93,129 +113,190 @@ function FilterSheet({
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex flex-col items-center pt-3 pb-2">
+        <div className="flex flex-col items-center pt-3 pb-2 shrink-0">
           <span className="w-10 h-1 rounded-full" style={{ backgroundColor: "#2e3454" }} />
         </div>
 
-        <div className="flex items-center justify-between px-5 pb-4">
+        <div className="flex items-center justify-between px-5 pb-3 shrink-0">
           <h3 className="font-extrabold text-base" style={{ color: "#e8eaf2" }}>
             Bộ lọc
           </h3>
           <button
             type="button"
             onClick={() => setDraft({ ...DEFAULT_FILTERS })}
-            className="text-xs font-semibold"
+            className="text-xs font-semibold hover:opacity-80"
             style={{ color: "#9b94ff" }}
           >
             Đặt lại
           </button>
         </div>
 
-        <div className="px-5 pb-5 space-y-5">
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-semibold" style={{ color: "#a0a8c8" }}>
-                Độ tuổi
-              </p>
-              <p className="text-xs font-mono" style={{ color: "#9b94ff" }}>
-                {minAge} – {maxAge}
-              </p>
+        <div className="px-5 pb-5 space-y-6 overflow-y-auto flex-1">
+          {/* PHẦN 1: ĐỐI TƯỢNG TÌM KIẾM */}
+          <div className="space-y-4">
+            <div className="pb-1.5 border-b border-purple-900/40">
+              <span className="text-xs font-bold uppercase tracking-wider text-purple-400">
+                1. Đối tượng tìm kiếm
+              </span>
             </div>
-            <div className="space-y-3">
-              <label className="block">
-                <span className="text-[10px]" style={{ color: "#3a4060" }}>
-                  Từ
-                </span>
-                <input
-                  type="range"
-                  min={18}
-                  max={60}
-                  value={minAge}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    setDraft((p) => ({
-                      ...p,
-                      minAge: v,
-                      maxAge: Math.max(v, p.maxAge ?? DEFAULT_FILTERS.maxAge),
-                    }));
-                  }}
-                  className="w-full accent-[#6c63ff]"
-                />
-              </label>
-              <label className="block">
-                <span className="text-[10px]" style={{ color: "#3a4060" }}>
-                  Đến
-                </span>
-                <input
-                  type="range"
-                  min={18}
-                  max={60}
-                  value={maxAge}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    setDraft((p) => ({
-                      ...p,
-                      maxAge: v,
-                      minAge: Math.min(v, p.minAge ?? DEFAULT_FILTERS.minAge),
-                    }));
-                  }}
-                  className="w-full accent-[#6c63ff]"
-                />
-              </label>
+
+            {/* Độ tuổi */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold" style={{ color: "#a0a8c8" }}>
+                  Độ tuổi
+                </p>
+                <p className="text-xs font-mono font-bold" style={{ color: "#9b94ff" }}>
+                  {minAge} – {maxAge} tuổi
+                </p>
+              </div>
+              <div className="space-y-3">
+                <label className="block">
+                  <div className="flex justify-between text-[10px] mb-1" style={{ color: "#6b74a0" }}>
+                    <span>Từ: {minAge} tuổi</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={18}
+                    max={60}
+                    value={minAge}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setDraft((p) => ({
+                        ...p,
+                        minAge: v,
+                        maxAge: Math.max(v, p.maxAge ?? DEFAULT_FILTERS.maxAge),
+                      }));
+                    }}
+                    className="w-full accent-[#6c63ff]"
+                  />
+                </label>
+                <label className="block">
+                  <div className="flex justify-between text-[10px] mb-1" style={{ color: "#6b74a0" }}>
+                    <span>Đến: {maxAge} tuổi</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={18}
+                    max={60}
+                    value={maxAge}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setDraft((p) => ({
+                        ...p,
+                        maxAge: v,
+                        minAge: Math.min(v, p.minAge ?? DEFAULT_FILTERS.minAge),
+                      }));
+                    }}
+                    className="w-full accent-[#6c63ff]"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* Giới tính */}
+            <div>
+              <p className="text-xs font-semibold mb-2" style={{ color: "#a0a8c8" }}>
+                Giới tính
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: "man", label: "Nam" },
+                  { id: "woman", label: "Nữ" },
+                  { id: "all", label: "Tất cả" },
+                ].map((opt) => {
+                  const isAll = genders.length === 0 || genders.includes("all" as any);
+                  const active = opt.id === "all" ? isAll : (!isAll && genders.includes(opt.id as any));
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => {
+                        if (opt.id === "all") {
+                          setDraft((p) => ({ ...p, genders: [] }));
+                        } else {
+                          setDraft((p) => ({ ...p, genders: [opt.id as NearbyGender] }));
+                        }
+                      }}
+                      className="py-2.5 rounded-xl text-xs font-bold transition-all text-center"
+                      style={
+                        active
+                          ? { backgroundColor: "#6c63ff", color: "#fff", boxShadow: "0 2px 10px rgba(108,99,255,0.4)" }
+                          : { backgroundColor: "#1a1d2e", color: "#6b74a0", border: "1px solid #282c4d" }
+                      }
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Khoảng cách */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold" style={{ color: "#a0a8c8" }}>
+                  Khoảng cách
+                </p>
+                <p className="text-xs font-mono font-bold" style={{ color: "#9b94ff" }}>
+                  ≤ {maxDistanceKm} km
+                </p>
+              </div>
+              <input
+                type="range"
+                min={1}
+                max={100}
+                value={maxDistanceKm}
+                onChange={(e) =>
+                  setDraft((p) => ({ ...p, maxDistanceKm: Number(e.target.value) }))
+                }
+                className="w-full accent-[#6c63ff]"
+              />
+              <div className="flex justify-between text-[10px] mt-1" style={{ color: "#3a4060" }}>
+                <span>1 km</span>
+                <span>100 km</span>
+              </div>
             </div>
           </div>
 
-          <div>
-            <p className="text-xs font-semibold mb-2" style={{ color: "#a0a8c8" }}>
-              Giới tính
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {GENDER_OPTIONS.map((opt) => {
-                const active = genders.includes(opt.id);
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => toggleGender(opt.id)}
-                    className="px-4 py-2 rounded-full text-xs font-semibold transition-all"
-                    style={
-                      active
-                        ? { backgroundColor: "#6c63ff", color: "#fff" }
-                        : { backgroundColor: "#1a1d2e", color: "#6b74a0" }
-                    }
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
+          {/* PHẦN 2: AI CÓ THỂ TÌM THẤY BẠN */}
+          <div className="space-y-3 pt-2">
+            <div className="pb-1.5 border-b border-cyan-900/40">
+              <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">
+                2. Ai có thể tìm thấy bạn
+              </span>
             </div>
-            <p className="text-[10px] mt-2" style={{ color: "#3a4060" }}>
-              Không chọn = theo sở thích hồ sơ của bạn
-            </p>
-          </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-semibold" style={{ color: "#a0a8c8" }}>
-                Khoảng cách
+            <div>
+              <p className="text-xs font-semibold mb-2" style={{ color: "#a0a8c8" }}>
+                Giới tính
               </p>
-              <p className="text-xs font-mono" style={{ color: "#9b94ff" }}>
-                ≤ {maxDistanceKm} km
-              </p>
-            </div>
-            <input
-              type="range"
-              min={1}
-              max={100}
-              value={maxDistanceKm}
-              onChange={(e) =>
-                setDraft((p) => ({ ...p, maxDistanceKm: Number(e.target.value) }))
-              }
-              className="w-full accent-[#6c63ff]"
-            />
-            <div className="flex justify-between text-[10px] mt-1" style={{ color: "#3a4060" }}>
-              <span>1 km</span>
-              <span>100 km</span>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: "man", label: "Nam" },
+                  { id: "woman", label: "Nữ" },
+                  { id: "all", label: "Tất cả" },
+                ].map((opt) => {
+                  const active = visibilityGender === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => {
+                        setDraft((p) => ({ ...p, visibilityGender: opt.id as any }));
+                      }}
+                      className="py-2.5 rounded-xl text-xs font-bold transition-all text-center"
+                      style={
+                        active
+                          ? { backgroundColor: "#00e5ff", color: "#0a0c14", boxShadow: "0 2px 10px rgba(0,229,255,0.3)" }
+                          : { backgroundColor: "#1a1d2e", color: "#6b74a0", border: "1px solid #282c4d" }
+                      }
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
@@ -424,27 +505,39 @@ export default function NearbyList({
                   >
                     <Avatar initials={u.avatar} userId={u.id} size="lg" online={u.online} photoUrl={u.photoUrl} />
                   </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2 mb-0.5">
-                      <span className="font-bold text-sm truncate text-left" style={{ color: "#e8eaf2" }}>
+                  <div className="flex-1 min-w-0 flex items-center justify-between gap-3">
+                    {/* Div 1: Tên, Icon giới tính + Tuổi, Icon vị trí + Khoảng cách */}
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-sm truncate text-left" style={{ color: "#e8eaf2" }}>
                         {u.name}
-                        {u.age ? `, ${u.age}` : ""}
-                        {friends.has(u.id) ? (
-                          <span className="ml-2 text-xs font-semibold" style={{ color: "#00e5ff" }}>
-                            · bạn bè
+                      </div>
+                      <div className="flex items-center gap-2.5 text-xs mt-1" style={{ color: "#a0a8c8" }}>
+                        {u.age ? (
+                          <span className="flex items-center gap-1">
+                            {renderGenderIcon(u.gender)}
+                            <span>{u.age}</span>
+                          </span>
+                        ) : u.gender ? (
+                          <span className="flex items-center gap-1">
+                            {renderGenderIcon(u.gender)}
                           </span>
                         ) : null}
-                      </span>
-                      <span
-                        className="flex-shrink-0 text-xs font-semibold font-mono px-2 py-0.5 rounded-lg"
-                        style={{ backgroundColor: "rgba(108,99,255,0.15)", color: "#9b94ff" }}
-                      >
-                        {formatDist(u.distanceKm)}
-                      </span>
+                        <span className="flex items-center gap-1">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="shrink-0 text-purple-400">
+                            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" />
+                            <circle cx="12" cy="9" r="2.5" />
+                          </svg>
+                          <span>{formatDist(u.distanceKm)}</span>
+                        </span>
+                      </div>
                     </div>
-                    <p className="text-xs truncate" style={{ color: "#a0a8c8" }}>
-                      {u.status}
-                    </p>
+
+                    {/* Div 2: Bio */}
+                    <div className="text-right shrink-0 max-w-[45%]">
+                      <p className="text-xs truncate" style={{ color: "#8a94b8" }}>
+                        {u.bio || u.status || ""}
+                      </p>
+                    </div>
                   </div>
                 </div>
               </button>

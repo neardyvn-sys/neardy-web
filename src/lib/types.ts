@@ -19,6 +19,7 @@ export interface NearbyFilters {
   maxAge?: number;
   maxDistanceKm?: number;
   genders?: NearbyGender[];
+  visibilityGender?: "all" | "man" | "woman";
 }
 
 export interface AuthUser {
