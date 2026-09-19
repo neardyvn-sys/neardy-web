@@ -7,10 +7,14 @@ import { useApp } from "@/components/providers/AppProvider";
 import { friendRequestsApi, type FriendRequestItem } from "@/lib/api";
 import { initialsFromName } from "@/lib/types";
 
+import { useCall } from "@/components/call/CallProvider";
+
 type InviteTab = "received" | "sent";
 
 export default function ContactsList() {
   const { matches, friends, refreshMatches } = useApp();
+  const { startCall, phase: callPhase } = useCall();
+  const inCall = callPhase !== "idle";
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [inviteOpen, setInviteOpen] = useState(true);
@@ -79,10 +83,10 @@ export default function ContactsList() {
   return (
     <div className="px-4 pb-4">
       <div
-        className="flex items-center gap-3 px-4 py-3 rounded-2xl mb-3"
+        className="flex items-center gap-3 px-4 py-3 rounded-2xl mb-3 relative"
         style={{ backgroundColor: "#111320", border: "1px solid #1e2240" }}
       >
-        <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="#6b74a0" strokeWidth={2}>
+        <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="#6b74a0" strokeWidth={2} className="shrink-0">
           <circle cx="11" cy="11" r="8" />
           <path d="m21 21-4.35-4.35" />
         </svg>
@@ -94,6 +98,19 @@ export default function ContactsList() {
           className="bg-transparent outline-none text-sm w-full"
           style={{ color: "#e8eaf2" }}
         />
+        {search.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setSearch("")}
+            className="w-5 h-5 rounded-full flex items-center justify-center transition-all hover:bg-slate-700/50 text-slate-400 hover:text-slate-200 shrink-0"
+            title="Xóa tìm kiếm"
+            aria-label="Xóa tìm kiếm"
+          >
+            <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Friend invites */}
@@ -256,10 +273,11 @@ export default function ContactsList() {
         {list.map((m) => (
           <div
             key={m.userId}
-            className="flex items-center gap-3 px-3 py-3 rounded-2xl"
+            onClick={() => router.push(`/messages/${m.userId}`)}
+            className="flex items-center gap-3 px-3 py-3 rounded-2xl cursor-pointer transition-all hover:bg-[#15182a]"
             style={{ backgroundColor: "#111320", border: "1px solid #1e2240" }}
           >
-            <button onClick={() => router.push(`/wall/${m.userId}`)} className="relative flex-shrink-0">
+            <div className="relative flex-shrink-0">
               <Avatar
                 initials={initialsFromName(m.displayName)}
                 userId={m.userId}
@@ -267,36 +285,112 @@ export default function ContactsList() {
                 photoUrl={m.primaryPhoto}
                 online={m.online}
               />
-            </button>
+            </div>
             <div className="flex-1 min-w-0">
-              <button
-                onClick={() => router.push(`/wall/${m.userId}`)}
-                className="font-bold text-sm hover:underline text-left"
+              <span
+                className="font-bold text-sm text-left truncate block"
                 style={{ color: "#e8eaf2" }}
               >
                 {m.displayName}
-              </button>
-              <p className="text-xs truncate" style={{ color: "#6b74a0" }}>
-                Đã kết nối
-              </p>
+              </span>
             </div>
-            <button
-              onClick={() => router.push(`/messages/${m.userId}`)}
-              className="w-8 h-8 rounded-xl flex items-center justify-center"
-              style={{ backgroundColor: "rgba(0,229,255,0.1)", color: "#00e5ff" }}
-            >
-              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+              {/* Voice Call Button */}
+              <button
+                type="button"
+                disabled={inCall}
+                onClick={() => {
+                  void startCall({
+                    conversationId: m.conversationId,
+                    targetUserId: m.userId,
+                    callType: "audio",
+                    peer: {
+                      id: m.userId,
+                      name: m.displayName,
+                      avatar: initialsFromName(m.displayName),
+                      photoUrl: m.primaryPhoto,
+                    },
+                  });
+                }}
+                className="w-8 h-8 rounded-xl flex items-center justify-center transition-all hover:opacity-80 active:scale-95 disabled:opacity-40"
+                style={{ backgroundColor: "rgba(108,99,255,0.15)", color: "#9b94ff" }}
+                title="Gọi thoại"
+                aria-label="Gọi thoại"
+              >
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
+                </svg>
+              </button>
+
+              {/* Video Call Button */}
+              <button
+                type="button"
+                disabled={inCall}
+                onClick={() => {
+                  void startCall({
+                    conversationId: m.conversationId,
+                    targetUserId: m.userId,
+                    callType: "video",
+                    peer: {
+                      id: m.userId,
+                      name: m.displayName,
+                      avatar: initialsFromName(m.displayName),
+                      photoUrl: m.primaryPhoto,
+                    },
+                  });
+                }}
+                className="w-8 h-8 rounded-xl flex items-center justify-center transition-all hover:opacity-80 active:scale-95 disabled:opacity-40"
+                style={{ backgroundColor: "rgba(0,229,255,0.15)", color: "#00e5ff" }}
+                title="Gọi video"
+                aria-label="Gọi video"
+              >
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <polygon points="23 7 16 12 23 17 23 7" />
+                  <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                </svg>
+              </button>
+            </div>
           </div>
         ))}
         {list.length === 0 && (
-          <div className="text-center py-16">
-            <p className="text-4xl mb-3">👥</p>
-            <p className="text-sm font-semibold" style={{ color: "#6b74a0" }}>
-              Chưa có bạn bè nào
-            </p>
+          <div
+            className="text-center py-12 px-4 rounded-2xl border"
+            style={{ backgroundColor: "#111320", borderColor: "#1e2240" }}
+          >
+            {search.trim() ? (
+              <>
+                <div
+                  className="w-12 h-12 rounded-2xl mx-auto mb-3 flex items-center justify-center text-xl"
+                  style={{ backgroundColor: "rgba(108, 99, 255, 0.15)", color: "#9b94ff" }}
+                >
+                  🔍
+                </div>
+                <p className="text-sm font-bold" style={{ color: "#e8eaf2" }}>
+                  Không tìm thấy kết quả
+                </p>
+                <p className="text-xs mt-1" style={{ color: "#6b74a0" }}>
+                  Không có bạn bè nào khớp với từ khóa{" "}
+                  <span className="font-semibold" style={{ color: "#9b94ff" }}>
+                    "{search}"
+                  </span>
+                </p>
+              </>
+            ) : (
+              <>
+                <div
+                  className="w-12 h-12 rounded-2xl mx-auto mb-3 flex items-center justify-center text-xl"
+                  style={{ backgroundColor: "rgba(0, 229, 255, 0.15)", color: "#00e5ff" }}
+                >
+                  👥
+                </div>
+                <p className="text-sm font-bold" style={{ color: "#e8eaf2" }}>
+                  Chưa có bạn bè nào
+                </p>
+                <p className="text-xs mt-1" style={{ color: "#6b74a0" }}>
+                  Hãy kết nối và kết bạn thêm với những người xung quanh nhé!
+                </p>
+              </>
+            )}
           </div>
         )}
       </div>
