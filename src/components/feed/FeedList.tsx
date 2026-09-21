@@ -8,6 +8,7 @@ import EditPostModal from "@/components/feed/EditPostModal";
 import ImageViewer, { type MediaItem } from "@/components/ui/ImageViewer";
 import { useApp } from "@/components/providers/AppProvider";
 import { feedApi, uploadsApi } from "@/lib/api";
+import DropdownMenu from "@/components/ui/DropdownMenu";
 import type { FeedPost } from "@/lib/types";
 import { initialsFromName } from "@/lib/types";
 
@@ -424,42 +425,31 @@ export default function FeedList() {
                       e.stopPropagation();
                       setActiveMenuId((cur) => (cur === post.id ? null : post.id));
                     }}
-                    className="p-1.5 rounded-xl hover:bg-[#1a1d2e] text-xs font-bold"
-                    style={{ color: "#6b74a0" }}
+                    className="p-1.5 rounded-xl hover:bg-[#1a1d2e] text-xs font-bold transition-all text-slate-400"
                   >
                     •••
                   </button>
 
-                  {activeMenuId === post.id && (
-                    <div
-                      className="absolute right-0 mt-1 z-20 rounded-xl overflow-hidden shadow-lg text-xs"
-                      style={{ backgroundColor: "#161929", border: "1px solid #1e2240", minWidth: 140 }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveMenuId(null);
-                          router.push(`/feed/${post.id}/edit`);
-                        }}
-                        className="w-full px-3.5 py-2.5 text-left hover:bg-[#1a1d2e]"
-                        style={{ color: "#e8eaf2" }}
-                      >
-                        ✏️ Chỉnh sửa bài viết
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveMenuId(null);
-                          void handleDeletePost(post.id);
-                        }}
-                        className="w-full px-3.5 py-2.5 text-left hover:bg-[#1a1d2e]"
-                        style={{ color: "#f87171" }}
-                      >
-                        🗑️ Xóa bài viết
-                      </button>
-                    </div>
-                  )}
+                  <DropdownMenu
+                    open={activeMenuId === post.id}
+                    onClose={() => setActiveMenuId(null)}
+                    align="right"
+                    items={[
+                      {
+                        key: "edit",
+                        icon: "✏️",
+                        label: "Chỉnh sửa bài viết",
+                        onClick: () => router.push(`/feed/${post.id}/edit`),
+                      },
+                      {
+                        key: "delete",
+                        icon: "🗑️",
+                        label: "Xóa bài viết",
+                        danger: true,
+                        onClick: () => void handleDeletePost(post.id),
+                      },
+                    ]}
+                  />
                 </div>
               )}
             </div>
