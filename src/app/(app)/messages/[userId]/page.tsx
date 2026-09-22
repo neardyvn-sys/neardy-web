@@ -91,7 +91,12 @@ export default function ChatPage() {
       conversationId={match?.conversationId}
       isFriend={isFriend}
       onClose={() => {
-        void refreshMatches().finally(() => router.push("/messages"));
+        void refreshMatches();
+        if (typeof window !== "undefined" && window.history.length > 1) {
+          router.back();
+        } else {
+          router.push("/messages");
+        }
       }}
     />
   );
