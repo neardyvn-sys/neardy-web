@@ -4,7 +4,8 @@ import { useEffect, useRef } from "react";
 
 export interface DropdownItem {
   key: string;
-  label: string;
+  label: React.ReactNode;
+  subLabel?: string;
   icon?: string;
   danger?: boolean;
   onClick: () => void;
@@ -72,11 +73,18 @@ export default function DropdownMenu({
               item.onClick();
               onClose();
             }}
-            className="w-full px-4 py-2.5 text-left flex items-center gap-2.5 transition-colors hover:bg-[#1f233a] active:bg-[#282d4a] font-medium"
+            className="w-full px-4 py-2.5 text-left flex items-start gap-2.5 transition-colors hover:bg-[#1f233a] active:bg-[#282d4a] font-medium"
             style={{ color: item.danger ? "#f87171" : "#e8eaf2" }}
           >
-            {item.icon && <span className="text-sm shrink-0">{item.icon}</span>}
-            <span className="truncate">{item.label}</span>
+            {item.icon && <span className="text-sm shrink-0 mt-0.5">{item.icon}</span>}
+            <div className="flex-1 min-w-0">
+              <div className="leading-snug">{item.label}</div>
+              {item.subLabel && (
+                <div className="text-[10px] leading-tight mt-0.5 font-normal" style={{ color: "#8a94b8" }}>
+                  {item.subLabel}
+                </div>
+              )}
+            </div>
           </button>
         ))}
       </div>

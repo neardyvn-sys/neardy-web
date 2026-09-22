@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/components/providers/AppProvider";
-import { blocksApi, meApi, type PrivacySettings } from "@/lib/api";
+import { activityHidesApi, blocksApi, meApi, type PrivacySettings } from "@/lib/api";
 import { initialsFromName } from "@/lib/types";
 
 const DEFAULT_PRIVACY: PrivacySettings = {
@@ -98,6 +98,9 @@ export default function PrivacySettingsPage() {
   const [blocks, setBlocks] = useState<
     { user_id: string; display_name: string; primary_photo: string | null }[]
   >([]);
+  const [activityHides, setActivityHides] = useState<
+    { user_id: string; display_name: string; primary_photo: string | null }[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -106,9 +109,14 @@ export default function PrivacySettingsPage() {
     void (async () => {
       setLoading(true);
       try {
-        const [p, b] = await Promise.all([meApi.privacy(), blocksApi.list()]);
+        const [p, b, ah] = await Promise.all([
+          meApi.privacy(),
+          blocksApi.list(),
+          activityHidesApi.list(),
+        ]);
         setPrivacy(p);
-        setBlocks(b.blocks);
+        setBlocks(b.blocks || []);
+        setActivityHides(ah.activity_hides || []);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Không tải được cài đặt");
       } finally {
@@ -141,6 +149,15 @@ export default function PrivacySettingsPage() {
       setBlocks((prev) => prev.filter((b) => b.user_id !== userId));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Bỏ chặn thất bại");
+    }
+  };
+
+  const unhideActivity = async (userId: string) => {
+    try {
+      await activityHidesApi.unhide(userId);
+      setActivityHides((prev) => prev.filter((ah) => ah.user_id !== userId));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Bỏ ẩn hoạt động thất bại");
     }
   };
 
@@ -203,56 +220,206 @@ export default function PrivacySettingsPage() {
               </div>
             </div>
 
+            {/* HIỆN TRÊN NEARBY */}
             <div>
-              <p className="text-xs font-bold px-1 mb-2" style={{ color: "#6b74a0" }}>
-                TƯỜNG / NHẬT KÝ
+              <p className="text-xs font-bold px-1 mb-2 tracking-wider" style={{ color: "#6b74a0" }}>
+                HIỆN TRÊN NEARBY
               </p>
               <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid #1e2240" }}>
                 {(
                   [
-                    { id: "everyone" as const, label: "Công khai", sub: "Ai cũng xem được nhật ký" },
-                    { id: "friends" as const, label: "Bạn bè", sub: "Chỉ người đã kết nối" },
-                    { id: "private" as const, label: "Chỉ mình tôi", sub: "Ẩn tường với người khác" },
+                    { id: "everyone" as const, label: "Mọi người", sub: "Ai cũng có thể thấy bạn gần đây" },
+                    { id: "matches" as const, label: "Chỉ bạn bè", sub: "Chỉ người đã kết nối mới thấy" },
+                    { id: "hidden" as const, label: "Ẩn hoàn toàn", sub: "Không hiện trên Nearby" },
                   ] as const
                 ).map((opt, i, arr) => (
                   <div key={opt.id} style={{ borderBottom: i < arr.length - 1 ? "1px solid #1e2240" : "none" }}>
                     <OptionRow
                       label={opt.label}
                       sub={opt.sub}
-                      selected={privacy.wall_visibility === opt.id}
-                      onClick={() => void patch({ wall_visibility: opt.id })}
+                      selected={privacy.nearby_visibility === opt.id}
+                      onClick={() => void patch({ nearby_visibility: opt.id })}
                     />
                   </div>
                 ))}
               </div>
             </div>
 
-            <div>
-              <p className="text-xs font-bold px-1 mb-2" style={{ color: "#6b74a0" }}>
-                AI CÓ THỂ NHẮN TIN
-              </p>
-              <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid #1e2240" }}>
-                {(
-                  [
-                    { id: "everyone" as const, label: "Mọi người", sub: "Ai cũng có thể kết nối / nhắn" },
-                    { id: "friends" as const, label: "Chỉ bạn bè", sub: "Chỉ người đã kết nối mới nhắn được" },
-                  ] as const
-                ).map((opt, i, arr) => (
-                  <div key={opt.id} style={{ borderBottom: i < arr.length - 1 ? "1px solid #1e2240" : "none" }}>
-                    <OptionRow
-                      label={opt.label}
-                      sub={opt.sub}
-                      selected={privacy.message_permission === opt.id}
-                      onClick={() => void patch({ message_permission: opt.id })}
-                    />
+            {/* TƯỜNG / NHẬT KÝ */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 px-1 pt-1">
+                <span className="text-sm">📝</span>
+                <p className="text-xs font-extrabold tracking-wider" style={{ color: "#8a94b8" }}>
+                  TƯỜNG / NHẬT KÝ
+                </p>
+              </div>
+
+              {/* Nhóm 1: Cho phép xem và bình luận */}
+              <div className="rounded-2xl p-3.5 space-y-3" style={{ backgroundColor: "#0e101c", border: "1px solid #1e2240" }}>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-indigo-400" />
+                  <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#9b94ff" }}>
+                    1. Cho phép xem và bình luận
+                  </p>
+                </div>
+
+                <div className="rounded-xl overflow-hidden" style={{ border: "1px solid #232747" }}>
+                  <div className="px-3 py-2 text-[11px] font-medium" style={{ backgroundColor: "#141727", color: "#8a94b8" }}>
+                    Ai có thể xem nhật ký của tôi
                   </div>
-                ))}
+                  {(
+                    [
+                      { id: "everyone" as const, label: "Công khai", sub: "Ai cũng xem được nhật ký" },
+                      { id: "friends" as const, label: "Bạn bè", sub: "Chỉ người đã kết nối" },
+                      { id: "private" as const, label: "Chỉ mình tôi", sub: "Ẩn tường với người khác" },
+                    ] as const
+                  ).map((opt, i, arr) => (
+                    <div key={opt.id} style={{ borderBottom: i < arr.length - 1 ? "1px solid #1e2240" : "none" }}>
+                      <OptionRow
+                        label={opt.label}
+                        sub={opt.sub}
+                        selected={privacy.wall_visibility === opt.id}
+                        onClick={() => void patch({ wall_visibility: opt.id })}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div className="rounded-xl overflow-hidden" style={{ border: "1px solid #232747" }}>
+                  <div className="px-3 py-2 text-[11px] font-medium" style={{ backgroundColor: "#141727", color: "#8a94b8" }}>
+                    Ai có thể nhắn tin & kết nối
+                  </div>
+                  {(
+                    [
+                      { id: "everyone" as const, label: "Mọi người", sub: "Ai cũng có thể kết nối / nhắn" },
+                      { id: "friends" as const, label: "Chỉ bạn bè", sub: "Chỉ người đã kết nối mới nhắn được" },
+                    ] as const
+                  ).map((opt, i, arr) => (
+                    <div key={opt.id} style={{ borderBottom: i < arr.length - 1 ? "1px solid #1e2240" : "none" }}>
+                      <OptionRow
+                        label={opt.label}
+                        sub={opt.sub}
+                        selected={privacy.message_permission === opt.id}
+                        onClick={() => void patch({ message_permission: opt.id })}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Nhóm 2: Chặn và ẩn */}
+              <div className="rounded-2xl p-3.5 space-y-3" style={{ backgroundColor: "#0e101c", border: "1px solid #1e2240" }}>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-rose-400" />
+                  <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#f87171" }}>
+                    2. Chặn và ẩn
+                  </p>
+                </div>
+
+                {/* Danh sách chặn */}
+                <div>
+                  <p className="text-[11px] font-semibold px-1 mb-1.5" style={{ color: "#8a94b8" }}>
+                    🚫 Người bị chặn xem nhật ký & tương tác ({blocks.length})
+                  </p>
+                  <div className="rounded-xl overflow-hidden" style={{ border: "1px solid #232747" }}>
+                    {blocks.length === 0 ? (
+                      <p className="px-4 py-3 text-xs" style={{ backgroundColor: "#111320", color: "#6b74a0" }}>
+                        Chưa chặn ai
+                      </p>
+                    ) : (
+                      blocks.map((b, i) => (
+                        <div
+                          key={b.user_id}
+                          className="flex items-center gap-3 px-4 py-2.5"
+                          style={{
+                            backgroundColor: "#111320",
+                            borderBottom: i < blocks.length - 1 ? "1px solid #1e2240" : "none",
+                          }}
+                        >
+                          {b.primary_photo ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={b.primary_photo}
+                              alt=""
+                              className="w-8 h-8 rounded-lg object-cover flex-shrink-0"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+                              {initialsFromName(b.display_name)}
+                            </div>
+                          )}
+                          <p className="flex-1 text-xs font-semibold truncate" style={{ color: "#e8eaf2" }}>
+                            {b.display_name}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => void unblock(b.user_id)}
+                            className="text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors hover:bg-[#252a45]"
+                            style={{ backgroundColor: "#1a1d2e", color: "#f87171" }}
+                          >
+                            Bỏ chặn
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Danh sách ẩn hoạt động */}
+                <div>
+                  <p className="text-[11px] font-semibold px-1 mb-1.5" style={{ color: "#8a94b8" }}>
+                    👁️‍🗨️ Người bị ẩn hoạt động khỏi nhật ký / bảng tin ({activityHides.length})
+                  </p>
+                  <div className="rounded-xl overflow-hidden" style={{ border: "1px solid #232747" }}>
+                    {activityHides.length === 0 ? (
+                      <p className="px-4 py-3 text-xs" style={{ backgroundColor: "#111320", color: "#6b74a0" }}>
+                        Chưa ẩn hoạt động của ai
+                      </p>
+                    ) : (
+                      activityHides.map((ah, i) => (
+                        <div
+                          key={ah.user_id}
+                          className="flex items-center gap-3 px-4 py-2.5"
+                          style={{
+                            backgroundColor: "#111320",
+                            borderBottom: i < activityHides.length - 1 ? "1px solid #1e2240" : "none",
+                          }}
+                        >
+                          {ah.primary_photo ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={ah.primary_photo}
+                              alt=""
+                              className="w-8 h-8 rounded-lg object-cover flex-shrink-0"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+                              {initialsFromName(ah.display_name)}
+                            </div>
+                          )}
+                          <p className="flex-1 text-xs font-semibold truncate" style={{ color: "#e8eaf2" }}>
+                            {ah.display_name}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => void unhideActivity(ah.user_id)}
+                            className="text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors hover:bg-[#252a45]"
+                            style={{ backgroundColor: "#1a1d2e", color: "#9b94ff" }}
+                          >
+                            Bỏ ẩn
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 
+            {/* HIỂN THỊ THÔNG TIN */}
             <div>
-              <p className="text-xs font-bold px-1 mb-2" style={{ color: "#6b74a0" }}>
-                HIỂN THỊ
+              <p className="text-xs font-bold px-1 mb-2 tracking-wider" style={{ color: "#6b74a0" }}>
+                HIỂN THỊ THÔNG TIN
               </p>
               <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid #1e2240" }}>
                 {(
@@ -293,54 +460,6 @@ export default function PrivacySettingsPage() {
                     />
                   </div>
                 ))}
-              </div>
-            </div>
-
-            <div>
-              <p className="text-xs font-bold px-1 mb-2" style={{ color: "#6b74a0" }}>
-                DANH SÁCH CHẶN
-              </p>
-              <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid #1e2240" }}>
-                {blocks.length === 0 ? (
-                  <p className="px-4 py-4 text-xs" style={{ backgroundColor: "#111320", color: "#6b74a0" }}>
-                    Chưa chặn ai
-                  </p>
-                ) : (
-                  blocks.map((b, i) => (
-                    <div
-                      key={b.user_id}
-                      className="flex items-center gap-3 px-4 py-3"
-                      style={{
-                        backgroundColor: "#111320",
-                        borderBottom: i < blocks.length - 1 ? "1px solid #1e2240" : "none",
-                      }}
-                    >
-                      {b.primary_photo ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={b.primary_photo}
-                          alt=""
-                          className="w-9 h-9 rounded-xl object-cover flex-shrink-0"
-                        />
-                      ) : (
-                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
-                          {initialsFromName(b.display_name)}
-                        </div>
-                      )}
-                      <p className="flex-1 text-sm font-semibold truncate" style={{ color: "#e8eaf2" }}>
-                        {b.display_name}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => void unblock(b.user_id)}
-                        className="text-xs font-semibold px-2.5 py-1.5 rounded-lg"
-                        style={{ backgroundColor: "#1a1d2e", color: "#9b94ff" }}
-                      >
-                        Bỏ chặn
-                      </button>
-                    </div>
-                  ))
-                )}
               </div>
             </div>
           </>

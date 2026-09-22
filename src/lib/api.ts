@@ -163,6 +163,29 @@ export const blocksApi = {
   unblock: (userId: string) => api(`/v1/blocks/${userId}`, { method: "DELETE" }),
 };
 
+export const reportsApi = {
+  report: (targetId: string, reason = "feed_post") =>
+    api("/v1/reports", {
+      method: "POST",
+      body: JSON.stringify({ target_id: targetId, reason }),
+    }),
+};
+
+export const activityHidesApi = {
+  list: () =>
+    api<{
+      activity_hides: {
+        user_id: string;
+        display_name: string;
+        primary_photo: string | null;
+        created_at: string;
+      }[];
+    }>("/v1/activity-hides"),
+  hide: (userId: string) =>
+    api("/v1/activity-hides", { method: "POST", body: JSON.stringify({ user_id: userId }) }),
+  unhide: (userId: string) => api(`/v1/activity-hides/${userId}`, { method: "DELETE" }),
+};
+
 export const nearbyApi = {
   list: (filters?: {
     min_age?: number;
@@ -274,6 +297,11 @@ export const friendRequestsApi = {
   cancel: (id: string) => api(`/v1/friend-requests/${id}/cancel`, { method: "POST" }),
 };
 
+export const friendsApi = {
+  unfriend: (userId: string) =>
+    api<{ unfriended: boolean }>(`/v1/friends/${userId}`, { method: "DELETE" }),
+};
+
 export const feedApi = {
   list: (opts?: { userId?: string; limit?: number }) => {
     const q = new URLSearchParams({
@@ -339,6 +367,10 @@ export const feedApi = {
     }),
   delete: (id: string) =>
     api<{ deleted: boolean; id: string }>(`/v1/posts/${id}`, { method: "DELETE" }),
+  hide: (id: string) =>
+    api<{ hidden: boolean; id: string }>(`/v1/posts/${id}/hide`, { method: "POST" }),
+  unhide: (id: string) =>
+    api<{ hidden: boolean; id: string }>(`/v1/posts/${id}/hide`, { method: "DELETE" }),
   like: (id: string) => api<{ liked: boolean }>(`/v1/posts/${id}/likes`, { method: "POST" }),
   comments: (id: string) =>
     api<{

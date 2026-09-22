@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import Avatar from "@/components/ui/Avatar";
 import CommentSheet from "@/components/feed/CommentSheet";
 import EditPostModal from "@/components/feed/EditPostModal";
+import ReportModal from "@/components/feed/ReportModal";
 import ImageViewer, { type MediaItem } from "@/components/ui/ImageViewer";
 import { useApp } from "@/components/providers/AppProvider";
-import { feedApi, uploadsApi } from "@/lib/api";
+import { activityHidesApi, blocksApi, feedApi, friendsApi, reportsApi, uploadsApi } from "@/lib/api";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import type { FeedPost } from "@/lib/types";
 import { initialsFromName } from "@/lib/types";
@@ -93,7 +94,7 @@ function PostMediaGrid({
 
 export default function FeedList() {
   const router = useRouter();
-  const { user } = useApp();
+  const { user, friends, refreshMatches } = useApp();
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [body, setBody] = useState("");
   const [pending, setPending] = useState<PendingMedia[]>([]);
@@ -103,6 +104,7 @@ export default function FeedList() {
   const [commentPostId, setCommentPostId] = useState<string | null>(null);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [editingPost, setEditingPost] = useState<FeedPost | null>(null);
+  const [reportTarget, setReportTarget] = useState<{ id: string; name: string } | null>(null);
   const [viewerMedia, setViewerMedia] = useState<{
     media: MediaItem[];
     index: number;
@@ -120,6 +122,60 @@ export default function FeedList() {
       setActiveMenuId(null);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Xóa bài viết thất bại");
+    }
+  };
+
+  const handleHidePost = async (postId: string) => {
+    try {
+      await feedApi.hide(postId);
+      setPosts((prev) => prev.filter((p) => p.id !== postId));
+      setActiveMenuId(null);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Ẩn bài viết thất bại");
+    }
+  };
+
+  const handleHideUserActivity = async (authorId: string, authorName: string) => {
+    if (confirm(`Bạn sẽ không thấy bài đăng của ${authorName} nữa. Tiếp tục?`)) {
+      try {
+        await activityHidesApi.hide(authorId);
+        setPosts((prev) => prev.filter((p) => p.userId !== authorId));
+        setActiveMenuId(null);
+        alert(`Đã ẩn hoạt động của ${authorName}`);
+      } catch (err) {
+        alert(err instanceof Error ? err.message : "Ẩn hoạt động thất bại");
+      }
+    }
+  };
+
+  const handleBlockUser = async (authorId: string, authorName: string) => {
+    if (confirm(`Chặn ${authorName} xem nhật ký của tôi và tương tác với tôi?`)) {
+      try {
+        await blocksApi.block(authorId);
+        setPosts((prev) => prev.filter((p) => p.userId !== authorId));
+        setActiveMenuId(null);
+        alert(`Đã chặn ${authorName}`);
+      } catch (err) {
+        alert(err instanceof Error ? err.message : "Chặn người dùng thất bại");
+      }
+    }
+  };
+
+  const handleReportUser = (authorId: string, authorName: string) => {
+    setActiveMenuId(null);
+    setReportTarget({ id: authorId, name: authorName });
+  };
+
+  const handleRemoveFriend = async (authorId: string, authorName: string) => {
+    if (confirm(`Bạn có chắc chắn muốn xóa ${authorName} khỏi danh sách bạn bè?`)) {
+      try {
+        await friendsApi.unfriend(authorId);
+        await refreshMatches();
+        setActiveMenuId(null);
+        alert(`Đã xóa ${authorName} khỏi danh sách bạn bè`);
+      } catch (err) {
+        alert(err instanceof Error ? err.message : "Xóa bạn thất bại");
+      }
     }
   };
 
@@ -392,7 +448,7 @@ export default function FeedList() {
         return (
           <article
             key={post.id}
-            className="rounded-2xl overflow-hidden relative"
+            className="rounded-2xl relative"
             style={{ backgroundColor: "#111320", border: "1px solid #1e2240" }}
           >
             <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
@@ -417,41 +473,86 @@ export default function FeedList() {
                 </p>
               </div>
 
-              {isAuthor && (
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setActiveMenuId((cur) => (cur === post.id ? null : post.id));
-                    }}
-                    className="p-1.5 rounded-xl hover:bg-[#1a1d2e] text-xs font-bold transition-all text-slate-400"
-                  >
-                    •••
-                  </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveMenuId((cur) => (cur === post.id ? null : post.id));
+                  }}
+                  className="p-1.5 rounded-xl hover:bg-[#1a1d2e] text-xs font-bold transition-all text-slate-400"
+                >
+                  •••
+                </button>
 
-                  <DropdownMenu
-                    open={activeMenuId === post.id}
-                    onClose={() => setActiveMenuId(null)}
-                    align="right"
-                    items={[
-                      {
-                        key: "edit",
-                        icon: "✏️",
-                        label: "Chỉnh sửa bài viết",
-                        onClick: () => router.push(`/feed/${post.id}/edit`),
-                      },
-                      {
-                        key: "delete",
-                        icon: "🗑️",
-                        label: "Xóa bài viết",
-                        danger: true,
-                        onClick: () => void handleDeletePost(post.id),
-                      },
-                    ]}
-                  />
-                </div>
-              )}
+                <DropdownMenu
+                  open={activeMenuId === post.id}
+                  onClose={() => setActiveMenuId(null)}
+                  align="right"
+                  minWidth={240}
+                  className="max-w-[280px]"
+                  items={
+                    isAuthor
+                      ? [
+                          {
+                            key: "edit",
+                            icon: "✏️",
+                            label: "Chỉnh sửa bài viết",
+                            onClick: () => router.push(`/feed/${post.id}/edit`),
+                          },
+                          {
+                            key: "delete",
+                            icon: "🗑️",
+                            label: "Xóa bài viết",
+                            danger: true,
+                            onClick: () => void handleDeletePost(post.id),
+                          },
+                        ]
+                      : [
+                          {
+                            key: "hide_post",
+                            icon: "🗑️",
+                            label: "Xóa bài đăng",
+                            subLabel: "Bài đăng này sẽ ẩn khỏi nhật ký",
+                            onClick: () => handleHidePost(post.id),
+                          },
+                          {
+                            key: "hide_activity",
+                            icon: "👁️‍🗨️",
+                            label: "Ẩn hoạt động của người dùng",
+                            subLabel: "Bạn sẽ ko thấy bài đăng của người này",
+                            onClick: () => handleHideUserActivity(post.userId, post.displayName),
+                          },
+                          {
+                            key: "block_user",
+                            icon: "🚫",
+                            label: "Chặn người đăng xem nhật ký của tôi",
+                            danger: true,
+                            onClick: () => void handleBlockUser(post.userId, post.displayName),
+                          },
+                          {
+                            key: "report",
+                            icon: "⚠️",
+                            label: "Báo xấu",
+                            danger: true,
+                            onClick: () => void handleReportUser(post.userId, post.displayName),
+                          },
+                          ...(friends.has(post.userId)
+                            ? [
+                                {
+                                  key: "remove_friend",
+                                  icon: "👤❌",
+                                  label: "Xóa bạn",
+                                  danger: true,
+                                  onClick: () =>
+                                    void handleRemoveFriend(post.userId, post.displayName),
+                                },
+                              ]
+                            : []),
+                        ]
+                  }
+                />
+              </div>
             </div>
 
             <div
@@ -534,6 +635,15 @@ export default function FeedList() {
           initialIndex={viewerMedia.index}
           open={!!viewerMedia}
           onClose={() => setViewerMedia(null)}
+        />
+      )}
+
+      {reportTarget && (
+        <ReportModal
+          open={!!reportTarget}
+          targetId={reportTarget.id}
+          targetName={reportTarget.name}
+          onClose={() => setReportTarget(null)}
         />
       )}
     </div>
