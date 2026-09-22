@@ -597,21 +597,35 @@ export default function ChatPanel({
             <path d="M19 12H5M12 5l-7 7 7 7" />
           </svg>
         </button>
-        <Avatar initials={peer.avatar} userId={peer.id} size="md" online={peer.online} photoUrl={peer.photoUrl} />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold truncate" style={{ color: "#e8eaf2" }}>
-            {peer.name}
-          </p>
-          <p className="text-xs" style={{ color: typing ? "#00e5ff" : "#6b74a0" }}>
-            {typing
-              ? "đang nhập…"
-              : uploading
-                ? `Đang tải ${uploading} lên R2…`
-                : peer.online
-                  ? "Đang online"
-                  : "Offline"}
-          </p>
-        </div>
+        <button
+          type="button"
+          onClick={() => router.push(`/wall/${peer.id}`)}
+          className="flex items-center gap-3 flex-1 min-w-0 text-left hover:opacity-85 transition-opacity cursor-pointer group"
+          title={`Xem trang cá nhân của ${peer.name}`}
+        >
+          <Avatar
+            initials={peer.avatar}
+            userId={peer.id}
+            size="md"
+            online={peer.online}
+            photoUrl={peer.photoUrl}
+            className="group-hover:scale-105 transition-transform"
+          />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold truncate group-hover:text-[#818cf8] transition-colors" style={{ color: "#e8eaf2" }}>
+              {peer.name}
+            </p>
+            <p className="text-xs" style={{ color: typing ? "#00e5ff" : "#6b74a0" }}>
+              {typing
+                ? "đang nhập…"
+                : uploading
+                  ? `Đang tải ${uploading} lên R2…`
+                  : peer.online
+                    ? "Đang online"
+                    : "Offline"}
+            </p>
+          </div>
+        </button>
         {canChat && (
           <div className="flex items-center gap-1.5 flex-shrink-0">
             <button

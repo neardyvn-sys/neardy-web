@@ -7,6 +7,8 @@ import { COVER_OPTIONS, COVER_STORAGE_KEY } from "@/lib/constants";
 import { feedApi, meApi, uploadsApi } from "@/lib/api";
 import { useApp } from "@/components/providers/AppProvider";
 import CommentSheet from "@/components/feed/CommentSheet";
+import PostAudienceSheet, { type PostAudienceSetting } from "@/components/feed/PostAudienceSheet";
+import DropdownMenu from "@/components/ui/DropdownMenu";
 
 const MAX_MEDIA = 10;
 const IMAGE_ACCEPT = "image/jpeg,image/png,image/webp,image/gif";
@@ -96,6 +98,25 @@ export default function MyWall({ user }: { user: AuthUser }) {
   const [uploadingCover, setUploadingCover] = useState(false);
   const [activeSection, setActiveSection] = useState<"diary" | "photos" | "videos">("diary");
   const [commentPostId, setCommentPostId] = useState<string | null>(null);
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [audiencePostId, setAudiencePostId] = useState<string | null>(null);
+  const [postAudiences, setPostAudiences] = useState<Record<string, PostAudienceSetting>>({});
+
+  const handleDeletePost = async (postId: string) => {
+    if (postId.startsWith("local-")) {
+      setDiaryPosts((prev) => prev.filter((p) => p.id !== postId));
+      setActiveMenuId(null);
+      return;
+    }
+    if (!confirm("Bạn có chắc chắn muốn xóa bài đăng này không?")) return;
+    try {
+      await feedApi.delete(postId);
+      setDiaryPosts((prev) => prev.filter((p) => p.id !== postId));
+      setActiveMenuId(null);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Xóa bài đăng thất bại");
+    }
+  };
   const bioRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
@@ -637,9 +658,52 @@ export default function MyWall({ user }: { user: AuthUser }) {
                             boxShadow: "0 0 0 3px rgba(108,99,255,0.15)",
                           }}
                         />
-                        <p className="text-[11px] font-semibold mb-2" style={{ color: "#6b74a0" }}>
-                          {post.time}
-                        </p>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-[11px] font-semibold" style={{ color: "#6b74a0" }}>
+                            {post.time}
+                          </p>
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveMenuId((cur) => (cur === post.id ? null : post.id));
+                              }}
+                              className="p-1 rounded-lg hover:bg-[#1a1d2e] text-xs font-bold transition-all text-slate-400"
+                              title="Tùy chọn bài đăng"
+                            >
+                              •••
+                            </button>
+                            <DropdownMenu
+                              open={activeMenuId === post.id}
+                              onClose={() => setActiveMenuId(null)}
+                              align="right"
+                              minWidth={200}
+                              className="max-w-[240px]"
+                              items={[
+                                {
+                                  key: "privacy",
+                                  icon: "🔒",
+                                  label: "Chỉnh sửa quyền xem",
+                                  onClick: () => setAudiencePostId(post.id),
+                                },
+                                {
+                                  key: "edit",
+                                  icon: "✏️",
+                                  label: "Chỉnh sửa bài đăng",
+                                  onClick: () => router.push(`/feed/${post.id}/edit`),
+                                },
+                                {
+                                  key: "delete",
+                                  icon: "🗑️",
+                                  label: "Xóa bài đăng",
+                                  danger: true,
+                                  onClick: () => void handleDeletePost(post.id),
+                                },
+                              ]}
+                            />
+                          </div>
+                        </div>
                         <div
                           className="rounded-2xl overflow-hidden"
                           style={{ backgroundColor: "#111320", border: "1px solid #1e2240" }}
@@ -1001,6 +1065,21 @@ export default function MyWall({ user }: { user: AuthUser }) {
                   : p,
               ),
             );
+          }}
+        />
+      )}
+
+      {audiencePostId && (
+        <PostAudienceSheet
+          open={!!audiencePostId}
+          postId={audiencePostId}
+          initialType={postAudiences[audiencePostId]?.type || "friends"}
+          initialSelectedIds={postAudiences[audiencePostId]?.selectedUserIds || []}
+          onClose={() => setAudiencePostId(null)}
+          onSave={(setting) => {
+            if (audiencePostId) {
+              setPostAudiences((prev) => ({ ...prev, [audiencePostId]: setting }));
+            }
           }}
         />
       )}
