@@ -809,12 +809,22 @@ export default function MyWall({ user }: { user: AuthUser }) {
                 {diaryImages.map((img) => (
                   <div
                     key={img.id}
-                    className="aspect-square rounded-xl overflow-hidden"
+                    onClick={() => {
+                      if (img.postId && !img.postId.startsWith("local-")) {
+                        router.push(`/feed/${img.postId}`);
+                      }
+                    }}
+                    className="aspect-square rounded-xl overflow-hidden border border-[#1e2240] cursor-pointer hover:opacity-85 hover:border-[#6c63ff]/60 transition-all active:scale-[0.97] relative group"
                     style={{ backgroundColor: "#111320" }}
                     title={img.time}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={img.url} alt="" className="w-full h-full object-cover" />
+                    <img src={img.url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
+                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                      <span className="text-[10px] font-bold text-white px-2 py-1 rounded-md bg-black/60 backdrop-blur-sm">
+                        Xem chi tiết
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -844,22 +854,45 @@ export default function MyWall({ user }: { user: AuthUser }) {
               diaryVideos.map((v) => (
                 <div
                   key={v.id}
-                  className="overflow-hidden rounded-2xl"
+                  onClick={() => {
+                    if (v.postId && !v.postId.startsWith("local-")) {
+                      router.push(`/feed/${v.postId}`);
+                    }
+                  }}
+                  className="overflow-hidden rounded-2xl cursor-pointer hover:border-[#6c63ff]/60 hover:shadow-lg transition-all active:scale-[0.99] group"
                   style={{ backgroundColor: "#111320", border: "1px solid #1e2240" }}
                 >
-                  <video
-                    src={v.url}
-                    controls
-                    playsInline
-                    className="w-full max-h-64 object-cover bg-black"
-                  />
-                  <div className="px-3 py-2.5">
-                    <p className="text-sm font-semibold truncate" style={{ color: "#e8eaf2" }}>
-                      {v.text?.trim() || "Video nhật ký"}
-                    </p>
-                    <p className="text-xs" style={{ color: "#6b74a0" }}>
-                      {v.time}
-                    </p>
+                  <div className="relative aspect-video bg-black flex items-center justify-center overflow-hidden">
+                    <video
+                      src={v.url}
+                      playsInline
+                      muted
+                      preload="metadata"
+                      className="w-full h-full object-cover pointer-events-none group-hover:scale-105 transition-transform duration-200"
+                    />
+                    <div className="absolute inset-0 bg-black/25 flex items-center justify-center">
+                      <div className="w-11 h-11 rounded-full bg-black/60 group-hover:bg-[#6c63ff] flex items-center justify-center text-white backdrop-blur-sm transition-colors shadow-lg">
+                        <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" className="ml-0.5">
+                          <polygon points="5 3 19 12 5 21 5 3" />
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="px-3.5 py-3 flex items-center justify-between">
+                    <div className="min-w-0 flex-1 pr-3">
+                      <p className="text-sm font-semibold truncate" style={{ color: "#e8eaf2" }}>
+                        {v.text?.trim() || "Video nhật ký"}
+                      </p>
+                      <p className="text-xs" style={{ color: "#6b74a0" }}>
+                        {v.time}
+                      </p>
+                    </div>
+                    <span
+                      className="text-xs font-semibold px-2.5 py-1 rounded-lg flex items-center gap-1 group-hover:bg-[#6c63ff] group-hover:text-white transition-colors flex-shrink-0"
+                      style={{ color: "#9b94ff", backgroundColor: "#1e2240" }}
+                    >
+                      Xem chi tiết →
+                    </span>
                   </div>
                 </div>
               ))
