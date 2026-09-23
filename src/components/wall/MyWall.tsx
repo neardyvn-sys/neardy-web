@@ -9,6 +9,7 @@ import { useApp } from "@/components/providers/AppProvider";
 import CommentSheet from "@/components/feed/CommentSheet";
 import PostAudienceSheet, { type PostAudienceSetting } from "@/components/feed/PostAudienceSheet";
 import DropdownMenu from "@/components/ui/DropdownMenu";
+import ImageViewer, { type MediaItem } from "@/components/ui/ImageViewer";
 
 const MAX_MEDIA = 10;
 const IMAGE_ACCEPT = "image/jpeg,image/png,image/webp,image/gif";
@@ -101,6 +102,10 @@ export default function MyWall({ user }: { user: AuthUser }) {
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [audiencePostId, setAudiencePostId] = useState<string | null>(null);
   const [postAudiences, setPostAudiences] = useState<Record<string, PostAudienceSetting>>({});
+  const [viewerMedia, setViewerMedia] = useState<{
+    media: MediaItem[];
+    index: number;
+  } | null>(null);
 
   const handleDeletePost = async (postId: string) => {
     if (postId.startsWith("local-")) {
@@ -722,11 +727,22 @@ export default function MyWall({ user }: { user: AuthUser }) {
                                 post.media.length === 1 ? "grid-cols-1" : "grid-cols-2"
                               }`}
                             >
-                              {post.media.map((m) => (
+                              {post.media.map((m, mIdx) => (
                                 <div
-                                  key={m.id}
-                                  className="overflow-hidden rounded-xl"
+                                  key={m.id || `${m.url}-${mIdx}`}
+                                  className="overflow-hidden rounded-xl cursor-pointer"
                                   style={{ backgroundColor: "#0a0c14", border: "1px solid #1e2240" }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setViewerMedia({
+                                      media: post.media!.map((item) => ({
+                                        id: item.id,
+                                        type: item.type,
+                                        url: item.url,
+                                      })),
+                                      index: mIdx,
+                                    });
+                                  }}
                                 >
                                   {m.type === "video" ? (
                                     <video
@@ -734,22 +750,36 @@ export default function MyWall({ user }: { user: AuthUser }) {
                                       controls
                                       playsInline
                                       className="w-full max-h-56 object-cover"
+                                      onClick={(e) => e.stopPropagation()}
                                     />
                                   ) : (
                                     // eslint-disable-next-line @next/next/no-img-element
-                                    <img src={m.url} alt="" className="w-full max-h-56 object-cover" />
+                                    <img
+                                      src={m.url}
+                                      alt=""
+                                      className="w-full max-h-56 object-cover hover:opacity-95 transition-opacity"
+                                    />
                                   )}
                                 </div>
                               ))}
                             </div>
                           ) : post.image ? (
                             <div className={`px-4 ${post.text ? "pb-2" : "pt-3.5 pb-2"}`}>
-                              <div className="rounded-xl overflow-hidden">
+                              <div
+                                className="rounded-xl overflow-hidden cursor-pointer"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setViewerMedia({
+                                    media: [{ type: "image", url: post.image! }],
+                                    index: 0,
+                                  });
+                                }}
+                              >
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
                                   src={post.image}
                                   alt=""
-                                  className="w-full object-cover"
+                                  className="w-full object-cover hover:opacity-95 transition-opacity"
                                   style={{ maxHeight: 200 }}
                                 />
                               </div>
@@ -1114,6 +1144,15 @@ export default function MyWall({ user }: { user: AuthUser }) {
               setPostAudiences((prev) => ({ ...prev, [audiencePostId]: setting }));
             }
           }}
+        />
+      )}
+
+      {viewerMedia && (
+        <ImageViewer
+          media={viewerMedia.media}
+          initialIndex={viewerMedia.index}
+          open={!!viewerMedia}
+          onClose={() => setViewerMedia(null)}
         />
       )}
     </div>
