@@ -111,9 +111,9 @@ export default function SwipeDeck({ candidates, onSwipe, onRefresh }: SwipeDeckP
   }
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-between w-full max-w-sm mx-auto px-4 py-2 select-none">
+    <div className="flex flex-col items-center justify-center w-full px-4 py-1 select-none">
       {/* Card Deck Area */}
-      <div className="relative w-full aspect-[3/4] max-h-[520px] flex items-center justify-center">
+      <div className="relative w-full aspect-[3/4] max-h-[430px] flex items-center justify-center">
         {/* Next Card Background Stack */}
         {nextUser && (
           <div
@@ -227,12 +227,12 @@ export default function SwipeDeck({ candidates, onSwipe, onRefresh }: SwipeDeckP
       </div>
 
       {/* Quick Action Control Buttons */}
-      <div className="flex items-center justify-center gap-4 py-4 w-full">
+      <div className="flex items-center justify-center gap-5 pt-3 pb-1 w-full flex-shrink-0 z-10">
         {/* Pass Button */}
         <button
           onClick={() => triggerAction("pass")}
-          className="w-14 h-14 rounded-full bg-[#171a2e] border border-[#ff4b72]/40 flex items-center justify-center text-2xl text-[#ff4b72] shadow-lg hover:bg-[#ff4b72]/20 active:scale-90 transition-all"
-          title="Bỏ qua"
+          className="w-13 h-13 rounded-full bg-[#171a2e] border-2 border-[#ff4b72]/50 flex items-center justify-center text-2xl text-[#ff4b72] shadow-lg hover:bg-[#ff4b72]/20 hover:scale-105 active:scale-90 transition-all cursor-pointer"
+          title="Bỏ qua (Swipe trái)"
         >
           ❌
         </button>
@@ -240,8 +240,8 @@ export default function SwipeDeck({ candidates, onSwipe, onRefresh }: SwipeDeckP
         {/* Super Like Button */}
         <button
           onClick={() => triggerAction("superlike")}
-          className="w-12 h-12 rounded-full bg-[#171a2e] border border-[#ffd700]/40 flex items-center justify-center text-xl text-[#ffd700] shadow-lg hover:bg-[#ffd700]/20 active:scale-90 transition-all"
-          title="Super Like"
+          className="w-11 h-11 rounded-full bg-[#171a2e] border-2 border-[#ffd700]/50 flex items-center justify-center text-lg text-[#ffd700] shadow-lg hover:bg-[#ffd700]/20 hover:scale-105 active:scale-90 transition-all cursor-pointer"
+          title="Super Like (Swipe lên)"
         >
           ⭐
         </button>
@@ -249,8 +249,8 @@ export default function SwipeDeck({ candidates, onSwipe, onRefresh }: SwipeDeckP
         {/* Like Button */}
         <button
           onClick={() => triggerAction("like")}
-          className="w-14 h-14 rounded-full bg-[#171a2e] border border-[#00e5ff]/40 flex items-center justify-center text-2xl text-[#00e5ff] shadow-lg hover:bg-[#00e5ff]/20 active:scale-90 transition-all"
-          title="Thích"
+          className="w-13 h-13 rounded-full bg-[#171a2e] border-2 border-[#00e5ff]/50 flex items-center justify-center text-2xl text-[#00e5ff] shadow-lg hover:bg-[#00e5ff]/20 hover:scale-105 active:scale-90 transition-all cursor-pointer"
+          title="Thích (Swipe phải)"
         >
           🩵
         </button>
