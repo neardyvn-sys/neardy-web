@@ -68,6 +68,8 @@ function mapDiaryPosts(
     liked_by_me: boolean;
     comment_count: number;
     media?: { id: string; type: string; url: string }[];
+    audience_type?: "friends" | "private" | "custom_include" | "custom_exclude";
+    audience_user_ids?: string[];
   }[],
 ): DiaryPost[] {
   return posts.map((p) => ({
@@ -79,6 +81,8 @@ function mapDiaryPosts(
     commentCount: p.comment_count,
     media: p.media || [],
     image: p.media?.find((m) => m.type === "image")?.url,
+    audienceType: p.audience_type || "friends",
+    audienceUserIds: p.audience_user_ids || [],
   }));
 }
 
@@ -471,7 +475,16 @@ export default function MyWall({ user }: { user: AuthUser }) {
             <div
               className="w-24 h-24 rounded-2xl overflow-hidden cursor-pointer relative"
               style={{ border: "4px solid #0a0c14", backgroundColor: "#111320" }}
-              onClick={() => avatarInputRef.current?.click()}
+              onClick={() => {
+                if (user.primaryPhoto) {
+                  setViewerMedia({
+                    media: [{ type: "image", url: user.primaryPhoto }],
+                    index: 0,
+                  });
+                } else {
+                  avatarInputRef.current?.click();
+                }
+              }}
             >
               {user.primaryPhoto ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -486,24 +499,29 @@ export default function MyWall({ user }: { user: AuthUser }) {
                 </div>
               )}
 
-              {/* Hover Overlay */}
-              <div
-                className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                style={{ backgroundColor: "rgba(0,0,0,0.55)" }}
-              >
-                <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="white" strokeWidth={2}>
-                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                  <circle cx="12" cy="13" r="4" />
-                </svg>
-              </div>
+              {/* Hover Overlay for viewing avatar */}
+              {user.primaryPhoto && (
+                <div
+                  className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{ backgroundColor: "rgba(0,0,0,0.4)" }}
+                >
+                  <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="white" strokeWidth={2}>
+                    <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                </div>
+              )}
             </div>
 
-            {/* Camera Badge button */}
+            {/* Camera Badge button to change avatar */}
             <button
               type="button"
-              onClick={() => avatarInputRef.current?.click()}
+              onClick={(e) => {
+                e.stopPropagation();
+                avatarInputRef.current?.click();
+              }}
               disabled={uploadingAvatar}
-              className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-110 active:scale-95"
+              className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-110 active:scale-95 z-10"
               style={{
                 backgroundColor: "#6c63ff",
                 border: "3px solid #0a0c14",
@@ -664,9 +682,41 @@ export default function MyWall({ user }: { user: AuthUser }) {
                           }}
                         />
                         <div className="flex items-center justify-between mb-2">
-                          <p className="text-[11px] font-semibold" style={{ color: "#6b74a0" }}>
-                            {post.time}
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-[11px] font-semibold" style={{ color: "#6b74a0" }}>
+                              {post.time}
+                            </p>
+                            <span
+                              className="text-[10px] px-2 py-0.5 rounded-full font-medium flex items-center gap-1"
+                              style={{
+                                backgroundColor:
+                                  post.audienceType === "private"
+                                    ? "rgba(239,68,68,0.15)"
+                                    : post.audienceType === "custom_include"
+                                      ? "rgba(108,99,255,0.18)"
+                                      : post.audienceType === "custom_exclude"
+                                        ? "rgba(245,158,11,0.15)"
+                                        : "#161929",
+                                color:
+                                  post.audienceType === "private"
+                                    ? "#f87171"
+                                    : post.audienceType === "custom_include"
+                                      ? "#a5b4fc"
+                                      : post.audienceType === "custom_exclude"
+                                        ? "#fbbf24"
+                                        : "#8a94b8",
+                                border: "1px solid #1e2240",
+                              }}
+                            >
+                              {post.audienceType === "private"
+                                ? "🔒 Chỉ mình tôi"
+                                : post.audienceType === "custom_include"
+                                  ? `👤➕ Chỉ ${post.audienceUserIds?.length || 0} bạn bè`
+                                  : post.audienceType === "custom_exclude"
+                                    ? `🚫 Loại trừ ${post.audienceUserIds?.length || 0} bạn bè`
+                                    : "👥 Bạn bè"}
+                            </span>
+                          </div>
                           <div className="relative">
                             <button
                               type="button"
@@ -1132,20 +1182,37 @@ export default function MyWall({ user }: { user: AuthUser }) {
         />
       )}
 
-      {audiencePostId && (
-        <PostAudienceSheet
-          open={!!audiencePostId}
-          postId={audiencePostId}
-          initialType={postAudiences[audiencePostId]?.type || "friends"}
-          initialSelectedIds={postAudiences[audiencePostId]?.selectedUserIds || []}
-          onClose={() => setAudiencePostId(null)}
-          onSave={(setting) => {
-            if (audiencePostId) {
-              setPostAudiences((prev) => ({ ...prev, [audiencePostId]: setting }));
+      {audiencePostId && (() => {
+        const targetPost = diaryPosts.find((p) => p.id === audiencePostId);
+        const currentSetting = postAudiences[audiencePostId];
+        return (
+          <PostAudienceSheet
+            open={!!audiencePostId}
+            postId={audiencePostId}
+            initialType={currentSetting?.type || targetPost?.audienceType || "friends"}
+            initialSelectedIds={
+              currentSetting?.selectedUserIds || targetPost?.audienceUserIds || []
             }
-          }}
-        />
-      )}
+            onClose={() => setAudiencePostId(null)}
+            onSave={(setting) => {
+              if (audiencePostId) {
+                setPostAudiences((prev) => ({ ...prev, [audiencePostId]: setting }));
+                setDiaryPosts((prev) =>
+                  prev.map((p) =>
+                    p.id === audiencePostId
+                      ? {
+                          ...p,
+                          audienceType: setting.type,
+                          audienceUserIds: setting.selectedUserIds || [],
+                        }
+                      : p,
+                  ),
+                );
+              }
+            }}
+          />
+        );
+      })()}
 
       {viewerMedia && (
         <ImageViewer

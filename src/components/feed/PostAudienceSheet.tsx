@@ -4,10 +4,11 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/ui/Avatar";
 import { useApp } from "@/components/providers/AppProvider";
-import { meApi } from "@/lib/api";
+import { feedApi } from "@/lib/api";
+import type { PostAudienceType } from "@/lib/types";
 import { initialsFromName } from "@/lib/types";
 
-export type PostAudienceType = "friends" | "private" | "custom_include" | "custom_exclude";
+export type { PostAudienceType };
 
 export interface PostAudienceSetting {
   type: PostAudienceType;
@@ -37,7 +38,12 @@ export default function PostAudienceSheet({
 
   const [step, setStep] = useState<"main" | "picker">("main");
   const [selectedType, setSelectedType] = useState<PostAudienceType>(initialType);
-  const [selectedFriends, setSelectedFriends] = useState<string[]>(initialSelectedIds);
+  const [includeFriends, setIncludeFriends] = useState<string[]>(
+    initialType === "custom_include" ? initialSelectedIds : [],
+  );
+  const [excludeFriends, setExcludeFriends] = useState<string[]>(
+    initialType === "custom_exclude" ? initialSelectedIds : [],
+  );
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -48,7 +54,8 @@ export default function PostAudienceSheet({
     if (open) {
       setStep("main");
       setSelectedType(initialType);
-      setSelectedFriends(initialSelectedIds || []);
+      setIncludeFriends(initialType === "custom_include" ? initialSelectedIds || [] : []);
+      setExcludeFriends(initialType === "custom_exclude" ? initialSelectedIds || [] : []);
       setSearch("");
       setError("");
       setSuccess(false);
@@ -68,10 +75,23 @@ export default function PostAudienceSheet({
 
   if (!open) return null;
 
+  const activeSelectedFriends =
+    selectedType === "custom_include"
+      ? includeFriends
+      : selectedType === "custom_exclude"
+        ? excludeFriends
+        : [];
+
   const toggleFriend = (id: string) => {
-    setSelectedFriends((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
+    if (selectedType === "custom_include") {
+      setIncludeFriends((prev) =>
+        prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+      );
+    } else if (selectedType === "custom_exclude") {
+      setExcludeFriends((prev) =>
+        prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+      );
+    }
   };
 
   const filteredMatches = matches.filter((m) =>
@@ -79,16 +99,34 @@ export default function PostAudienceSheet({
   );
 
   const handleSelectAll = () => {
-    setSelectedFriends(filteredMatches.map((m) => m.userId));
+    const allIds = filteredMatches.map((m) => m.userId);
+    if (selectedType === "custom_include") {
+      setIncludeFriends(allIds);
+    } else if (selectedType === "custom_exclude") {
+      setExcludeFriends(allIds);
+    }
   };
 
   const handleDeselectAll = () => {
-    setSelectedFriends([]);
+    if (selectedType === "custom_include") {
+      setIncludeFriends([]);
+    } else if (selectedType === "custom_exclude") {
+      setExcludeFriends([]);
+    }
   };
 
   const handleSave = async (overrideType?: PostAudienceType, overrideFriends?: string[]) => {
     const targetType = overrideType || selectedType;
-    const targetFriends = overrideFriends || selectedFriends;
+    let targetFriends = overrideFriends;
+    if (!targetFriends) {
+      if (targetType === "custom_include") {
+        targetFriends = includeFriends;
+      } else if (targetType === "custom_exclude") {
+        targetFriends = excludeFriends;
+      } else {
+        targetFriends = [];
+      }
+    }
 
     setError("");
     if (
@@ -101,10 +139,11 @@ export default function PostAudienceSheet({
 
     setSaving(true);
     try {
-      if (targetType === "friends") {
-        void meApi.patchPrivacy({ wall_visibility: "friends" }).catch(() => {});
-      } else if (targetType === "private") {
-        void meApi.patchPrivacy({ wall_visibility: "private" }).catch(() => {});
+      if (postId) {
+        await feedApi.updateAudience(postId, {
+          type: targetType,
+          selectedUserIds: targetFriends,
+        });
       }
 
       onSave?.({
@@ -241,7 +280,7 @@ export default function PostAudienceSheet({
               disabled={saving || success}
               className="px-4 py-1.5 rounded-xl text-xs font-bold text-white transition-all shadow-md bg-[#6c63ff] hover:opacity-90 active:scale-95 disabled:opacity-50"
             >
-              {saving ? "Lưu..." : `Xong (${selectedFriends.length})`}
+              {saving ? "Lưu..." : `Xong (${activeSelectedFriends.length})`}
             </button>
           </div>
         )}
@@ -272,8 +311,12 @@ export default function PostAudienceSheet({
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-2.5">
               {options.map((opt) => {
                 const active = selectedType === opt.type;
-                const isCustom = opt.type === "custom_include" || opt.type === "custom_exclude";
-                const customCount = isCustom && active ? selectedFriends.length : 0;
+                const customCount =
+                  opt.type === "custom_include"
+                    ? includeFriends.length
+                    : opt.type === "custom_exclude"
+                      ? excludeFriends.length
+                      : 0;
 
                 return (
                   <div
@@ -421,7 +464,7 @@ export default function PostAudienceSheet({
                 <span className="font-semibold" style={{ color: "#8a94b8" }}>
                   Đã chọn:{" "}
                   <strong className="text-[#6c63ff] font-extrabold">
-                    {selectedFriends.length}
+                    {activeSelectedFriends.length}
                   </strong>{" "}
                   / {matches.length} bạn bè
                 </span>
@@ -458,7 +501,7 @@ export default function PostAudienceSheet({
                 </div>
               ) : (
                 filteredMatches.map((friend) => {
-                  const isChecked = selectedFriends.includes(friend.userId);
+                  const isChecked = activeSelectedFriends.includes(friend.userId);
                   return (
                     <div
                       key={friend.userId}
@@ -539,7 +582,7 @@ export default function PostAudienceSheet({
                   boxShadow: "0 4px 15px rgba(108,99,255,0.35)",
                 }}
               >
-                {saving ? "Đang lưu..." : success ? "Đã lưu ✓" : `Xác nhận (${selectedFriends.length})`}
+                {saving ? "Đang lưu..." : success ? "Đã lưu ✓" : `Xác nhận (${activeSelectedFriends.length})`}
               </button>
             </div>
           </div>

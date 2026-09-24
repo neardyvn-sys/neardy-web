@@ -321,16 +321,27 @@ export const feedApi = {
         like_count: number;
         comment_count: number;
         liked_by_me: boolean;
+        audience_type?: "friends" | "private" | "custom_include" | "custom_exclude";
+        audience_user_ids?: string[];
       }[];
     }>(`/v1/feed?${q.toString()}`);
   },
   create: (
     body: string,
     media: { type: "image" | "video"; url: string; sort_order: number }[] = [],
+    audience?: {
+      type?: "friends" | "private" | "custom_include" | "custom_exclude";
+      selectedUserIds?: string[];
+    },
   ) =>
     api("/v1/posts", {
       method: "POST",
-      body: JSON.stringify({ body, media }),
+      body: JSON.stringify({
+        body,
+        media,
+        audience_type: audience?.type,
+        audience_user_ids: audience?.selectedUserIds,
+      }),
     }),
   get: (id: string) =>
     api<{
@@ -344,11 +355,17 @@ export const feedApi = {
       like_count: number;
       comment_count: number;
       liked_by_me: boolean;
+      audience_type?: "friends" | "private" | "custom_include" | "custom_exclude";
+      audience_user_ids?: string[];
     }>(`/v1/posts/${id}`),
   update: (
     id: string,
     body?: string,
     media?: { type: "image" | "video"; url: string; sort_order: number }[],
+    audience?: {
+      type?: "friends" | "private" | "custom_include" | "custom_exclude";
+      selectedUserIds?: string[];
+    },
   ) =>
     api<{
       id: string;
@@ -361,9 +378,45 @@ export const feedApi = {
       like_count: number;
       comment_count: number;
       liked_by_me: boolean;
+      audience_type?: "friends" | "private" | "custom_include" | "custom_exclude";
+      audience_user_ids?: string[];
     }>(`/v1/posts/${id}`, {
       method: "PATCH",
-      body: JSON.stringify({ body, media }),
+      body: JSON.stringify({
+        ...(body !== undefined ? { body } : {}),
+        ...(media !== undefined ? { media } : {}),
+        ...(audience?.type !== undefined ? { audience_type: audience.type } : {}),
+        ...(audience?.selectedUserIds !== undefined
+          ? { audience_user_ids: audience.selectedUserIds }
+          : {}),
+      }),
+    }),
+  updateAudience: (
+    id: string,
+    audience: {
+      type: "friends" | "private" | "custom_include" | "custom_exclude";
+      selectedUserIds?: string[];
+    },
+  ) =>
+    api<{
+      id: string;
+      body: string;
+      created_at: string;
+      user_id: string;
+      display_name: string;
+      primary_photo: string | null;
+      media: { id: string; type: string; url: string }[];
+      like_count: number;
+      comment_count: number;
+      liked_by_me: boolean;
+      audience_type?: "friends" | "private" | "custom_include" | "custom_exclude";
+      audience_user_ids?: string[];
+    }>(`/v1/posts/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        audience_type: audience.type,
+        audience_user_ids: audience.selectedUserIds ?? [],
+      }),
     }),
   delete: (id: string) =>
     api<{ deleted: boolean; id: string }>(`/v1/posts/${id}`, { method: "DELETE" }),

@@ -45,6 +45,8 @@ export interface MatchItem {
   online?: boolean;
 }
 
+export type PostAudienceType = "friends" | "private" | "custom_include" | "custom_exclude";
+
 export interface FeedPost {
   id: string;
   body: string;
@@ -56,6 +58,8 @@ export interface FeedPost {
   likeCount: number;
   commentCount: number;
   likedByMe: boolean;
+  audienceType?: PostAudienceType;
+  audienceUserIds?: string[];
 }
 
 export type FilterTab = "all" | "online";
@@ -93,6 +97,8 @@ export interface DiaryPost {
   commentCount?: number;
   image?: string;
   media?: { id: string; type: string; url: string }[];
+  audienceType?: PostAudienceType;
+  audienceUserIds?: string[];
 }
 
 export type CallType = "audio" | "video";

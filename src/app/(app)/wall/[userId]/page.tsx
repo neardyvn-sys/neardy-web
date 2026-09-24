@@ -246,14 +246,26 @@ export default function UserWallPage() {
       {/* Main Profile Info Header */}
       <div className="max-w-md mx-auto px-4">
         <div className="flex items-end justify-between -mt-12 mb-3">
-          <Avatar
-            initials={initialsFromName(name || "?")}
-            userId={userId}
-            size="xl"
-            photoUrl={photo}
-            online={isOnline}
-            className="ring-4 ring-[#0a0c14] shadow-2xl"
-          />
+          <div
+            className="cursor-pointer"
+            onClick={() => {
+              if (photo) {
+                setViewerMedia({
+                  media: [{ type: "image", url: photo }],
+                  index: 0,
+                });
+              }
+            }}
+          >
+            <Avatar
+              initials={initialsFromName(name || "?")}
+              userId={userId}
+              size="xl"
+              photoUrl={photo}
+              online={isOnline}
+              className="ring-4 ring-[#0a0c14] shadow-2xl hover:opacity-90 transition-opacity"
+            />
+          </div>
 
           {/* Action buttons */}
           <div className="flex items-center gap-2 pb-1">
