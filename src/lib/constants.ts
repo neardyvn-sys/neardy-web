@@ -35,6 +35,7 @@ export const TAB_TITLES: Record<string, string> = {
   contacts: "Danh bạ",
   feed: "Tường nhà",
   profile: "Cá nhân",
+  dating: "Hẹn hò"
 };
 
 export const COVER_OPTIONS = [
