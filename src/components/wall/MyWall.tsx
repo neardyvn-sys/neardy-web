@@ -10,6 +10,7 @@ import CommentSheet from "@/components/feed/CommentSheet";
 import PostAudienceSheet, { type PostAudienceSetting } from "@/components/feed/PostAudienceSheet";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import ImageViewer, { type MediaItem } from "@/components/ui/ImageViewer";
+import PostVideoPlayer from "@/components/ui/PostVideoPlayer";
 
 const MAX_MEDIA = 10;
 const IMAGE_ACCEPT = "image/jpeg,image/png,image/webp,image/gif";
@@ -780,34 +781,43 @@ export default function MyWall({ user }: { user: AuthUser }) {
                               {post.media.map((m, mIdx) => (
                                 <div
                                   key={m.id || `${m.url}-${mIdx}`}
-                                  className="overflow-hidden rounded-xl cursor-pointer"
+                                  className="overflow-hidden rounded-xl"
                                   style={{ backgroundColor: "#0a0c14", border: "1px solid #1e2240" }}
                                   onClick={(e) => {
-                                    e.stopPropagation();
-                                    setViewerMedia({
-                                      media: post.media!.map((item) => ({
-                                        id: item.id,
-                                        type: item.type,
-                                        url: item.url,
-                                      })),
-                                      index: mIdx,
-                                    });
+                                    if (m.type !== "video") {
+                                      e.stopPropagation();
+                                      setViewerMedia({
+                                        media: post.media!.map((item) => ({
+                                          id: item.id,
+                                          type: item.type,
+                                          url: item.url,
+                                        })),
+                                        index: mIdx,
+                                      });
+                                    }
                                   }}
                                 >
                                   {m.type === "video" ? (
-                                    <video
+                                    <PostVideoPlayer
                                       src={m.url}
-                                      controls
-                                      playsInline
-                                      className="w-full max-h-56 object-cover"
-                                      onClick={(e) => e.stopPropagation()}
+                                      className="w-full max-h-72 object-cover"
+                                      onMediaClick={() => {
+                                        setViewerMedia({
+                                          media: post.media!.map((item) => ({
+                                            id: item.id,
+                                            type: item.type,
+                                            url: item.url,
+                                          })),
+                                          index: mIdx,
+                                        });
+                                      }}
                                     />
                                   ) : (
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <img
                                       src={m.url}
                                       alt=""
-                                      className="w-full max-h-56 object-cover hover:opacity-95 transition-opacity"
+                                      className="w-full max-h-72 object-cover hover:opacity-95 transition-opacity cursor-pointer"
                                     />
                                   )}
                                 </div>

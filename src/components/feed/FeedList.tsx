@@ -41,6 +41,8 @@ function mediaGridClass(count: number) {
   return "grid-cols-2";
 }
 
+import PostVideoPlayer from "@/components/ui/PostVideoPlayer";
+
 function PostMediaGrid({
   media,
   onMediaClick,
@@ -62,19 +64,18 @@ function PostMediaGrid({
             }`}
             style={{ backgroundColor: "#0a0c14", border: "1px solid #1e2240" }}
             onClick={(e) => {
-              if (onMediaClick) {
+              if (item.type !== "video" && onMediaClick) {
                 e.stopPropagation();
                 onMediaClick(i);
               }
             }}
           >
             {item.type === "video" ? (
-              <video
+              <PostVideoPlayer
                 src={item.url}
-                controls
-                playsInline
                 className="w-full object-cover"
-                style={{ maxHeight: tall ? 320 : 180, minHeight: tall ? 200 : 120 }}
+                style={{ maxHeight: tall ? 380 : 220, minHeight: tall ? 220 : 140 }}
+                onMediaClick={onMediaClick ? () => onMediaClick(i) : undefined}
               />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
@@ -82,7 +83,7 @@ function PostMediaGrid({
                 src={item.url}
                 alt=""
                 className="w-full object-cover"
-                style={{ maxHeight: tall ? 320 : 180, minHeight: tall ? 200 : 120 }}
+                style={{ maxHeight: tall ? 380 : 220, minHeight: tall ? 220 : 140 }}
               />
             )}
           </div>

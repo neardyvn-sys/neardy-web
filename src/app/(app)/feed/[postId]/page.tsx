@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Avatar from "@/components/ui/Avatar";
 import EditPostModal from "@/components/feed/EditPostModal";
 import ImageViewer, { type MediaItem } from "@/components/ui/ImageViewer";
+import PostVideoPlayer from "@/components/ui/PostVideoPlayer";
 import { useApp } from "@/components/providers/AppProvider";
 import { feedApi, uploadsApi } from "@/lib/api";
 import type { FeedPost } from "@/lib/types";
@@ -328,15 +329,28 @@ export default function PostDetailPage({
                   {post.media.map((item, idx) => (
                     <div
                       key={item.id || `${item.url}-${idx}`}
-                      className="overflow-hidden rounded-xl cursor-pointer"
+                      className="overflow-hidden rounded-xl"
                       style={{ backgroundColor: "#0a0c14", border: "1px solid #1e2240" }}
-                      onClick={() => setViewerMedia({ media: post.media, index: idx })}
+                      onClick={(e) => {
+                        if (item.type !== "video") {
+                          e.stopPropagation();
+                          setViewerMedia({ media: post.media, index: idx });
+                        }
+                      }}
                     >
                       {item.type === "video" ? (
-                        <video src={item.url} controls playsInline className="w-full object-cover max-h-80" />
+                        <PostVideoPlayer
+                          src={item.url}
+                          className="w-full object-cover max-h-96"
+                          onMediaClick={() => setViewerMedia({ media: post.media, index: idx })}
+                        />
                       ) : (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={item.url} alt="" className="w-full object-cover max-h-80" />
+                        <img
+                          src={item.url}
+                          alt=""
+                          className="w-full object-cover max-h-96 hover:opacity-95 transition-opacity cursor-pointer"
+                        />
                       )}
                     </div>
                   ))}
