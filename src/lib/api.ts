@@ -247,6 +247,29 @@ export const likesApi = {
         online?: boolean;
       }[];
     }>("/v1/matches"),
+  sentLikes: (opts?: { kind?: string; limit?: number; offset?: number }) => {
+    const params = new URLSearchParams();
+    if (opts?.kind) params.set("kind", opts.kind);
+    if (opts?.limit) params.set("limit", String(opts.limit));
+    if (opts?.offset) params.set("offset", String(opts.offset));
+    const qs = params.toString();
+    return api<{
+      likes: {
+        user_id: string;
+        display_name: string;
+        primary_photo: string | null;
+        age?: number;
+        bio?: string;
+        gender?: string;
+        kind: "like" | "superlike";
+        created_at: string;
+        matched: boolean;
+        match_id?: string;
+        conversation_id?: string;
+        online?: boolean;
+      }[];
+    }>(`/v1/likes/sent${qs ? `?${qs}` : ""}`);
+  },
   messages: (conversationId: string) =>
     api<{
       messages: {

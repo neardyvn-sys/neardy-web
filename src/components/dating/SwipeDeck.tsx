@@ -12,6 +12,7 @@ export interface CandidateUser {
   age: number | null;
   distance_km: number | null;
   primary_photo: string | null;
+  photos?: string[];
   show_online?: boolean;
   online?: boolean;
 }
@@ -24,12 +25,29 @@ interface SwipeDeckProps {
 
 export default function SwipeDeck({ candidates, onSwipe, onRefresh }: SwipeDeckProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+  const [history, setHistory] = useState<number[]>([]);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const startPos = useRef({ x: 0, y: 0 });
+  const startPos = useRef({ x: 0, y: 0, time: 0 });
 
   const activeUser = candidates[currentIndex];
   const nextUser = candidates[currentIndex + 1];
+
+  const activePhotos = (activeUser?.photos && activeUser.photos.length > 0)
+    ? activeUser.photos
+    : (activeUser?.primary_photo ? [activeUser.primary_photo] : []);
+  const currentPhoto = activePhotos[currentPhotoIndex] || activeUser?.primary_photo;
+
+  const nextPhotos = (nextUser?.photos && nextUser.photos.length > 0)
+    ? nextUser.photos
+    : (nextUser?.primary_photo ? [nextUser.primary_photo] : []);
+  const nextPrimaryPhoto = nextPhotos[0] || nextUser?.primary_photo;
+
+  // Reset photo index when switching candidate
+  useEffect(() => {
+    setCurrentPhotoIndex(0);
+  }, [currentIndex]);
 
   const resetPosition = () => {
     setDragOffset({ x: 0, y: 0 });
@@ -44,13 +62,47 @@ export default function SwipeDeck({ candidates, onSwipe, onRefresh }: SwipeDeckP
     }
 
     onSwipe(activeUser, action);
+    setHistory((prev) => [...prev, currentIndex]);
     setCurrentIndex((prev) => prev + 1);
     resetPosition();
   };
 
+  const triggerRewind = () => {
+    if (history.length === 0) return;
+
+    if (typeof window !== "undefined" && window.navigator?.vibrate) {
+      window.navigator.vibrate(30);
+    }
+
+    const prevIndex = history[history.length - 1];
+    setHistory((prev) => prev.slice(0, -1));
+    setCurrentIndex(prevIndex);
+    resetPosition();
+  };
+
+  const handlePrevPhoto = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (currentPhotoIndex > 0) {
+      if (typeof window !== "undefined" && window.navigator?.vibrate) {
+        window.navigator.vibrate(15);
+      }
+      setCurrentPhotoIndex((prev) => prev - 1);
+    }
+  };
+
+  const handleNextPhoto = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (currentPhotoIndex < activePhotos.length - 1) {
+      if (typeof window !== "undefined" && window.navigator?.vibrate) {
+        window.navigator.vibrate(15);
+      }
+      setCurrentPhotoIndex((prev) => prev + 1);
+    }
+  };
+
   const handleTouchStart = (clientX: number, clientY: number) => {
     setIsDragging(true);
-    startPos.current = { x: clientX, y: clientY };
+    startPos.current = { x: clientX, y: clientY, time: Date.now() };
   };
 
   const handleTouchMove = (clientX: number, clientY: number) => {
@@ -62,7 +114,7 @@ export default function SwipeDeck({ candidates, onSwipe, onRefresh }: SwipeDeckP
 
   const handleTouchEnd = () => {
     if (!isDragging) return;
-    const threshold = 100;
+    const threshold = 90;
 
     if (dragOffset.x > threshold) {
       triggerAction("like");
@@ -101,7 +153,7 @@ export default function SwipeDeck({ candidates, onSwipe, onRefresh }: SwipeDeckP
               setCurrentIndex(0);
               onRefresh();
             }}
-            className="mt-2 px-5 py-2.5 rounded-full font-bold text-sm bg-gradient-to-r from-[#ff4b72] to-[#6c63ff] text-white shadow-lg hover:opacity-90 transition-all active:scale-95"
+            className="mt-2 px-5 py-2.5 rounded-full font-bold text-sm bg-gradient-to-r from-[#ff4b72] to-[#6c63ff] text-white shadow-lg hover:opacity-90 transition-all active:scale-95 cursor-pointer"
           >
             🔄 Tải lại thẻ mới
           </button>
@@ -119,10 +171,10 @@ export default function SwipeDeck({ candidates, onSwipe, onRefresh }: SwipeDeckP
           <div
             className="absolute inset-0 rounded-3xl bg-[#111320] border border-[#1e2240] overflow-hidden shadow-xl transform scale-[0.94] translate-y-3 opacity-60 pointer-events-none transition-all duration-300"
           >
-            {nextUser.primary_photo ? (
+            {nextPrimaryPhoto ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={nextUser.primary_photo}
+                src={nextPrimaryPhoto}
                 alt=""
                 className="w-full h-full object-cover filter brightness-75"
               />
@@ -151,12 +203,13 @@ export default function SwipeDeck({ candidates, onSwipe, onRefresh }: SwipeDeckP
           className="absolute inset-0 rounded-3xl bg-[#111320] border border-[#1e2240] overflow-hidden shadow-2xl flex flex-col justify-end"
         >
           {/* Main Photo / Avatar Background */}
-          {activeUser.primary_photo ? (
+          {currentPhoto ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={activeUser.primary_photo}
+              key={currentPhoto}
+              src={currentPhoto}
               alt=""
-              className="absolute inset-0 w-full h-full object-cover"
+              className="absolute inset-0 w-full h-full object-cover animate-fade-in"
             />
           ) : (
             <div className="absolute inset-0 bg-gradient-to-br from-[#2a1d47] to-[#0d1021] flex items-center justify-center">
@@ -165,6 +218,44 @@ export default function SwipeDeck({ candidates, onSwipe, onRefresh }: SwipeDeckP
                 userId={activeUser.id}
                 size="xl"
                 className="w-32 h-32 text-4xl"
+              />
+            </div>
+          )}
+
+          {/* Segmented Story Bars (if candidate has multiple photos) */}
+          {activePhotos.length > 1 && (
+            <div className="absolute top-3 left-3 right-3 z-30 flex items-center gap-1.5 pointer-events-none">
+              {activePhotos.map((_, idx) => (
+                <div
+                  key={idx}
+                  className="h-1 flex-1 rounded-full overflow-hidden bg-black/40 backdrop-blur-sm transition-all"
+                >
+                  <div
+                    className={`h-full transition-all duration-200 ${
+                      idx === currentPhotoIndex
+                        ? "bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)]"
+                        : idx < currentPhotoIndex
+                        ? "bg-white/70"
+                        : "bg-white/20"
+                    }`}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Tap Zones to Change Photo (Left / Right) */}
+          {activePhotos.length > 1 && (
+            <div className="absolute inset-x-0 top-8 bottom-28 z-20 flex">
+              <div
+                onClick={handlePrevPhoto}
+                className="w-1/2 h-full cursor-pointer"
+                title="Ảnh trước"
+              />
+              <div
+                onClick={handleNextPhoto}
+                className="w-1/2 h-full cursor-pointer"
+                title="Ảnh tiếp theo"
               />
             </div>
           )}
@@ -227,7 +318,21 @@ export default function SwipeDeck({ candidates, onSwipe, onRefresh }: SwipeDeckP
       </div>
 
       {/* Quick Action Control Buttons */}
-      <div className="flex items-center justify-center gap-5 pt-3 pb-1 w-full flex-shrink-0 z-10">
+      <div className="flex items-center justify-center gap-4 pt-3 pb-1 w-full flex-shrink-0 z-10">
+        {/* Rewind Button */}
+        <button
+          onClick={triggerRewind}
+          disabled={history.length === 0}
+          className={`w-11 h-11 rounded-full bg-[#171a2e] border-2 border-[#f59e0b]/50 flex items-center justify-center text-lg text-[#f59e0b] shadow-lg transition-all ${
+            history.length === 0
+              ? "opacity-30 cursor-not-allowed border-[#f59e0b]/20"
+              : "hover:bg-[#f59e0b]/20 hover:scale-105 active:scale-90 cursor-pointer"
+          }`}
+          title="Hoàn tác thẻ trước đó (Rewind)"
+        >
+          ↩️
+        </button>
+
         {/* Pass Button */}
         <button
           onClick={() => triggerAction("pass")}

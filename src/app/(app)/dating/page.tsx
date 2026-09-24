@@ -5,11 +5,15 @@ import { nearbyApi, likesApi } from "@/lib/api";
 import { useApp } from "@/components/providers/AppProvider";
 import SwipeDeck, { CandidateUser } from "@/components/dating/SwipeDeck";
 import MatchModal from "@/components/dating/MatchModal";
+import MatchesRow from "@/components/dating/MatchesRow";
+import LikesSentSheet from "@/components/dating/LikesSentSheet";
 
 export default function DatingPage() {
   const { user } = useApp();
   const [candidates, setCandidates] = useState<CandidateUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshMatchesKey, setRefreshMatchesKey] = useState(0);
+  const [showLikesSentSheet, setShowLikesSentSheet] = useState(false);
   const [matchedUser, setMatchedUser] = useState<{
     id: string;
     display_name: string;
@@ -44,6 +48,7 @@ export default function DatingPage() {
       const kind = action === "superlike" ? "superlike" : action === "like" ? "like" : "pass";
       const res = await likesApi.like(target.id, kind);
       if (res.matched) {
+        setRefreshMatchesKey((k) => k + 1);
         setMatchedUser({
           id: target.id,
           display_name: target.display_name,
@@ -58,7 +63,7 @@ export default function DatingPage() {
 
   return (
     <div className="w-full flex flex-col">
-      {/* Sub Header / Refresh */}
+      {/* Sub Header / Action Toolbar */}
       <div className="px-4 py-2 flex items-center justify-between">
         <div className="flex items-center gap-1.5">
           <span className="text-lg">🔥</span>
@@ -67,14 +72,27 @@ export default function DatingPage() {
           </p>
         </div>
 
-        <button
-          onClick={loadCandidates}
-          className="flex items-center gap-1 px-3 py-1 rounded-xl bg-white/5 hover:bg-white/10 transition-colors text-xs text-gray-300 font-semibold active:scale-95"
-          title="Tải lại gợi ý"
-        >
-          <span>🔄</span> Tải mới
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowLikesSentSheet(true)}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white/5 hover:bg-white/10 transition-colors text-xs text-gray-300 font-semibold active:scale-95 cursor-pointer"
+            title="Xem danh sách đã thích"
+          >
+            <span>💌</span> Đã thích
+          </button>
+
+          <button
+            onClick={loadCandidates}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white/5 hover:bg-white/10 transition-colors text-xs text-gray-300 font-semibold active:scale-95 cursor-pointer"
+            title="Tải lại gợi ý"
+          >
+            <span>🔄</span> Tải mới
+          </button>
+        </div>
       </div>
+
+      {/* Horizontal Matches Row */}
+      <MatchesRow key={refreshMatchesKey} />
 
       {/* Main Deck Container */}
       <div className="flex-1 flex flex-col justify-center items-center w-full">
@@ -91,6 +109,12 @@ export default function DatingPage() {
           />
         )}
       </div>
+
+      {/* Likes Sent Sheet / History */}
+      <LikesSentSheet
+        isOpen={showLikesSentSheet}
+        onClose={() => setShowLikesSentSheet(false)}
+      />
 
       {/* Match Overlay Modal */}
       <MatchModal
