@@ -129,7 +129,9 @@ export type PrivacySettings = {
   show_age: boolean;
   show_distance: boolean;
   show_online: boolean;
+  show_read_status: boolean;
   message_permission: "everyone" | "friends";
+  call_permission: "everyone" | "friends";
 };
 
 export const meApi = {

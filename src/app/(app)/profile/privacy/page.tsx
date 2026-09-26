@@ -12,7 +12,9 @@ const DEFAULT_PRIVACY: PrivacySettings = {
   show_age: true,
   show_distance: true,
   show_online: true,
+  show_read_status: true,
   message_permission: "everyone",
+  call_permission: "everyone",
 };
 
 function Toggle({
@@ -221,6 +223,84 @@ export default function PrivacySettingsPage() {
               </div>
             </div>
 
+            {/* TIN NHẮN & CUỘC GỌI */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 px-1 pt-1">
+                <span className="text-sm">💬</span>
+                <p className="text-xs font-extrabold tracking-wider" style={{ color: "#8a94b8" }}>
+                  TIN NHẮN & CUỘC GỌI
+                </p>
+              </div>
+
+              <div className="rounded-2xl p-3.5 space-y-3" style={{ backgroundColor: "#0e101c", border: "1px solid #1e2240" }}>
+                {/* Hiện trạng thái đã xem */}
+                <div className="rounded-xl overflow-hidden" style={{ border: "1px solid #232747" }}>
+                  <div
+                    className="flex items-center gap-3 px-4 py-3.5"
+                    style={{ backgroundColor: "#111320" }}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold" style={{ color: "#e8eaf2" }}>
+                        Hiện trạng thái &quot;Đã xem&quot;
+                      </p>
+                      <p className="text-xs" style={{ color: "#6b74a0" }}>
+                        Cho người khác biết khi bạn đã xem tin nhắn của họ
+                      </p>
+                    </div>
+                    <Toggle
+                      on={privacy.show_read_status ?? true}
+                      disabled={saving}
+                      onChange={(v) => void patch({ show_read_status: v })}
+                    />
+                  </div>
+                </div>
+
+                {/* Cho phép nhắn tin */}
+                <div className="rounded-xl overflow-hidden" style={{ border: "1px solid #232747" }}>
+                  <div className="px-3 py-2 text-[11px] font-medium" style={{ backgroundColor: "#141727", color: "#8a94b8" }}>
+                    Ai có thể nhắn tin cho tôi
+                  </div>
+                  {(
+                    [
+                      { id: "everyone" as const, label: "Mọi người", sub: "Ai cũng có thể nhắn tin & kết nối" },
+                      { id: "friends" as const, label: "Bạn bè", sub: "Chỉ người đã kết nối mới nhắn được" },
+                    ] as const
+                  ).map((opt, i, arr) => (
+                    <div key={opt.id} style={{ borderBottom: i < arr.length - 1 ? "1px solid #1e2240" : "none" }}>
+                      <OptionRow
+                        label={opt.label}
+                        sub={opt.sub}
+                        selected={privacy.message_permission === opt.id}
+                        onClick={() => void patch({ message_permission: opt.id })}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                {/* Cho phép gọi điện */}
+                <div className="rounded-xl overflow-hidden" style={{ border: "1px solid #232747" }}>
+                  <div className="px-3 py-2 text-[11px] font-medium" style={{ backgroundColor: "#141727", color: "#8a94b8" }}>
+                    Ai có thể gọi điện cho tôi
+                  </div>
+                  {(
+                    [
+                      { id: "everyone" as const, label: "Mọi người", sub: "Ai cũng có thể gọi thoại / video" },
+                      { id: "friends" as const, label: "Bạn bè", sub: "Chỉ người đã kết nối mới gọi được" },
+                    ] as const
+                  ).map((opt, i, arr) => (
+                    <div key={opt.id} style={{ borderBottom: i < arr.length - 1 ? "1px solid #1e2240" : "none" }}>
+                      <OptionRow
+                        label={opt.label}
+                        sub={opt.sub}
+                        selected={(privacy.call_permission ?? "everyone") === opt.id}
+                        onClick={() => void patch({ call_permission: opt.id })}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
             {/* TƯỜNG / NHẬT KÝ */}
             <div className="space-y-4">
               <div className="flex items-center gap-2 px-1 pt-1">
@@ -256,27 +336,6 @@ export default function PrivacySettingsPage() {
                         sub={opt.sub}
                         selected={privacy.wall_visibility === opt.id}
                         onClick={() => void patch({ wall_visibility: opt.id })}
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                <div className="rounded-xl overflow-hidden" style={{ border: "1px solid #232747" }}>
-                  <div className="px-3 py-2 text-[11px] font-medium" style={{ backgroundColor: "#141727", color: "#8a94b8" }}>
-                    Ai có thể nhắn tin & kết nối
-                  </div>
-                  {(
-                    [
-                      { id: "everyone" as const, label: "Mọi người", sub: "Ai cũng có thể kết nối / nhắn" },
-                      { id: "friends" as const, label: "Chỉ bạn bè", sub: "Chỉ người đã kết nối mới nhắn được" },
-                    ] as const
-                  ).map((opt, i, arr) => (
-                    <div key={opt.id} style={{ borderBottom: i < arr.length - 1 ? "1px solid #1e2240" : "none" }}>
-                      <OptionRow
-                        label={opt.label}
-                        sub={opt.sub}
-                        selected={privacy.message_permission === opt.id}
-                        onClick={() => void patch({ message_permission: opt.id })}
                       />
                     </div>
                   ))}
