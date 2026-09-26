@@ -90,7 +90,7 @@ export default function MatchesRow({ onMatchCountChange }: MatchesRowProps) {
         {matches.map((item) => (
           <button
             key={item.match_id}
-            onClick={() => router.push(`/messages/${item.conversation_id}`)}
+            onClick={() => router.push(`/messages/${item.user_id}`)}
             className="flex flex-col items-center gap-1 flex-shrink-0 group cursor-pointer text-left transition-transform active:scale-95"
             title={`Trò chuyện với ${item.display_name}`}
           >

@@ -9,20 +9,21 @@ import { initialsFromName, type NearbyUser } from "@/lib/types";
 
 export default function ChatPage() {
   const params = useParams();
-  const userId = String(params.userId);
+  const rawId = String(params.userId);
   const router = useRouter();
   const { user, users, matches, friends, refreshMatches } = useApp();
   const [fetched, setFetched] = useState<NearbyUser | null>(null);
 
-  const match = matches.find((m) => m.userId === userId);
-  const nearby = users.find((u) => u.id === userId);
-  const isFriend = friends.has(userId);
+  const match = matches.find((m) => m.userId === rawId || m.conversationId === rawId);
+  const targetUserId = match ? match.userId : rawId;
+  const nearby = users.find((u) => u.id === targetUserId);
+  const isFriend = friends.has(targetUserId);
 
   useEffect(() => {
     if (nearby || match) return;
     let cancelled = false;
     usersApi
-      .get(userId)
+      .get(targetUserId)
       .then((p) => {
         if (cancelled) return;
         setFetched({
@@ -43,7 +44,7 @@ export default function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [userId, nearby, match]);
+  }, [targetUserId, nearby, match]);
 
   const peer: NearbyUser | null = (() => {
     // Prefer match as it contains realtime presence and primary conversation

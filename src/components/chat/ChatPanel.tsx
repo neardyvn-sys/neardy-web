@@ -326,14 +326,18 @@ export default function ChatPanel({
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+  const [showUnmatchModal, setShowUnmatchModal] = useState(false);
+  const [unmatching, setUnmatching] = useState(false);
+  const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   const {
     chatWsReady,
     sendChatWs,
     subscribeChatWs,
     setActiveConversationId,
+    refreshMatches,
   } = useApp();
   const { startCall, phase: callPhase } = useCall();
-  const canChat = isFriend && !!conversationId;
+  const canChat = (isFriend || !!conversationId) && !!conversationId;
   const inCall = callPhase !== "idle";
 
   const lastReadableMineId = (() => {
@@ -582,15 +586,29 @@ export default function ChatPanel({
     if (ok) setError("");
   };
 
+  const handleUnmatch = async () => {
+    setUnmatching(true);
+    try {
+      await likesApi.unmatch(peer.id);
+      await refreshMatches();
+      setShowUnmatchModal(false);
+      onClose();
+    } catch (err) {
+      console.error("Failed to unmatch:", err);
+    } finally {
+      setUnmatching(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: "#0a0c14" }}>
       <div
-        className="flex items-center gap-3 px-4 py-3 flex-shrink-0"
+        className="flex items-center gap-3 px-4 py-3 flex-shrink-0 relative"
         style={{ borderBottom: "1px solid #1e2240", backgroundColor: "#0d0f1a" }}
       >
         <button
           onClick={onClose}
-          className="p-1.5 rounded-xl"
+          className="p-1.5 rounded-xl cursor-pointer"
           style={{ color: "#6b74a0" }}
         >
           <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -645,7 +663,7 @@ export default function ChatPanel({
                   },
                 });
               }}
-              className="w-10 h-10 rounded-xl flex items-center justify-center transition-opacity disabled:opacity-40"
+              className="w-10 h-10 rounded-xl flex items-center justify-center transition-opacity disabled:opacity-40 cursor-pointer"
               style={{ backgroundColor: "#1a1d2e", color: "#9b94ff" }}
               title="Gọi thoại"
               aria-label="Gọi thoại"
@@ -671,7 +689,7 @@ export default function ChatPanel({
                   },
                 });
               }}
-              className="w-10 h-10 rounded-xl flex items-center justify-center transition-opacity disabled:opacity-40"
+              className="w-10 h-10 rounded-xl flex items-center justify-center transition-opacity disabled:opacity-40 cursor-pointer"
               style={{ backgroundColor: "#1a1d2e", color: "#00e5ff" }}
               title="Gọi video"
               aria-label="Gọi video"
@@ -681,24 +699,58 @@ export default function ChatPanel({
                 <rect x="1" y="5" width="15" height="14" rx="2" />
               </svg>
             </button>
+
+            {/* Menu Options Button */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowOptionsMenu((prev) => !prev)}
+                className="w-10 h-10 rounded-xl flex items-center justify-center transition-colors hover:bg-white/10 cursor-pointer"
+                style={{ backgroundColor: "#1a1d2e", color: "#a0a8c8" }}
+                title="Tùy chọn khác"
+              >
+                ⋮
+              </button>
+
+              {showOptionsMenu && (
+                <div
+                  className="absolute right-0 top-12 w-48 py-1.5 rounded-2xl bg-[#141729] border border-[#1e2240] shadow-2xl z-30 animate-fade-in text-xs font-medium"
+                  onClick={() => setShowOptionsMenu(false)}
+                >
+                  <button
+                    onClick={() => router.push(`/wall/${peer.id}`)}
+                    className="w-full px-4 py-2.5 text-left flex items-center gap-2 text-gray-300 hover:bg-white/5 transition-colors cursor-pointer"
+                  >
+                    <span>👤</span> Trang cá nhân
+                  </button>
+
+                  <button
+                    onClick={() => setShowUnmatchModal(true)}
+                    className="w-full px-4 py-2.5 text-left flex items-center gap-2 text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer border-t border-white/5"
+                  >
+                    <span>💔</span> Hủy tương hợp (Unmatch)
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
 
       {!isFriend && (
         <div
-          className="flex-shrink-0 px-4 py-3 flex items-center gap-3"
+          className="flex-shrink-0 px-4 py-2.5 flex items-center justify-between gap-3"
           style={{
-            backgroundColor: "rgba(108,99,255,0.08)",
-            borderBottom: "1px solid rgba(108,99,255,0.2)",
+            backgroundColor: "rgba(255, 75, 114, 0.08)",
+            borderBottom: "1px solid rgba(255, 75, 114, 0.2)",
           }}
         >
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold" style={{ color: "#e8eaf2" }}>
-              Kết bạn với {peer.name}?
+            <p className="text-xs font-bold flex items-center gap-1" style={{ color: "#ff8fa3" }}>
+              <span>💖</span> Hai bạn đã tương hợp hẹn hò!
             </p>
-            <p className="text-xs mt-0.5" style={{ color: "#6b74a0" }}>
-              Kết bạn để bắt đầu trò chuyện realtime
+            <p className="text-[11px] mt-0.5" style={{ color: "#8a94b8" }}>
+              Kết bạn để xem toàn bộ bài viết & chia sẻ khoảnh khắc
             </p>
           </div>
           <button
@@ -707,14 +759,13 @@ export default function ChatPanel({
               onClose();
               router.push(`/friends/${peer.id}`);
             }}
-            className="flex-shrink-0 px-4 py-2 rounded-xl text-xs font-bold transition-all"
+            className="flex-shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all hover:opacity-95 active:scale-95 cursor-pointer flex items-center gap-1 shadow-md"
             style={{
-              background: "linear-gradient(135deg, #6c63ff, #5b54e8)",
+              background: "linear-gradient(135deg, #ff4b72, #6c63ff)",
               color: "#fff",
-              boxShadow: "0 4px 16px rgba(108,99,255,0.3)",
             }}
           >
-            + Kết bạn
+            <span>👥</span> Kết bạn
           </button>
         </div>
       )}
@@ -904,6 +955,47 @@ export default function ChatPanel({
           </svg>
         </button>
       </div>
+
+      {/* Unmatch Confirmation Modal */}
+      {showUnmatchModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+          <div
+            className="w-full max-w-sm rounded-3xl bg-[#111320] border border-[#1e2240] p-6 shadow-2xl space-y-4 text-center animate-slide-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-center text-3xl mx-auto">
+              💔
+            </div>
+
+            <div className="space-y-1.5">
+              <h3 className="text-base font-bold text-white">Hủy tương hợp với {peer.name}?</h3>
+              <p className="text-xs text-gray-400 leading-relaxed">
+                Cuộc trò chuyện hẹn hò sẽ kết thúc và cả hai sẽ không còn xuất hiện trong danh sách ghép đôi của nhau.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                disabled={unmatching}
+                onClick={() => setShowUnmatchModal(false)}
+                className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300 transition-colors cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+
+              <button
+                type="button"
+                disabled={unmatching}
+                onClick={handleUnmatch}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:opacity-90 text-xs font-bold text-white shadow-lg transition-all cursor-pointer disabled:opacity-50"
+              >
+                {unmatching ? "Đang hủy..." : "Xác nhận Hủy"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

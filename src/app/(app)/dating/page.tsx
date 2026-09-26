@@ -23,8 +23,8 @@ export default function DatingPage() {
 
   const loadCandidates = useCallback(() => {
     setLoading(true);
-    nearbyApi
-      .list({ min_age: 18, max_age: 50, max_distance_km: 100 })
+    likesApi
+      .candidates({ min_age: 18, max_age: 50, max_distance_km: 100 })
       .then((res) => {
         setCandidates(res.users || []);
       })

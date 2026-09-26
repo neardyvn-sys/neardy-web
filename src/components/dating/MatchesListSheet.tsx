@@ -137,7 +137,7 @@ export default function MatchesListSheet({ isOpen, onClose }: MatchesListSheetPr
                 <div
                   onClick={() => {
                     onClose();
-                    router.push(`/messages/${item.conversation_id}`);
+                    router.push(`/messages/${item.user_id}`);
                   }}
                   className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer group"
                 >
@@ -184,7 +184,7 @@ export default function MatchesListSheet({ isOpen, onClose }: MatchesListSheetPr
                   <button
                     onClick={() => {
                       onClose();
-                      router.push(`/messages/${item.conversation_id}`);
+                      router.push(`/messages/${item.user_id}`);
                     }}
                     className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#ff4b72] to-[#6c63ff] text-white text-xs font-bold shadow-md hover:opacity-95 active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
                   >

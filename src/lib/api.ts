@@ -231,6 +231,42 @@ export const likesApi = {
         hide_activity: !!opts?.hide_activity,
       }),
     }),
+  candidates: (opts?: {
+    min_age?: number;
+    max_age?: number;
+    max_distance_km?: number;
+    gender?: string;
+    page?: number;
+    limit?: number;
+  }) => {
+    const params = new URLSearchParams();
+    if (opts?.min_age) params.set("min_age", String(opts.min_age));
+    if (opts?.max_age) params.set("max_age", String(opts.max_age));
+    if (opts?.max_distance_km) params.set("max_distance_km", String(opts.max_distance_km));
+    if (opts?.gender) params.set("gender", opts.gender);
+    if (opts?.page) params.set("page", String(opts.page));
+    if (opts?.limit) params.set("limit", String(opts.limit));
+    const qs = params.toString();
+    return api<{
+      users: {
+        id: string;
+        display_name: string;
+        bio: string | null;
+        gender: string | null;
+        age: number | null;
+        distance_km: number | null;
+        primary_photo: string | null;
+        photos: string[];
+        show_online?: boolean;
+        online?: boolean;
+      }[];
+    }>(`/v1/dating/candidates${qs ? `?${qs}` : ""}`);
+  },
+  unmatch: (userId: string, matchId?: string) =>
+    api<{ success: boolean }>("/v1/matches/unmatch", {
+      method: "POST",
+      body: JSON.stringify({ user_id: userId, match_id: matchId || "" }),
+    }),
   matches: () =>
     api<{
       matches: {
