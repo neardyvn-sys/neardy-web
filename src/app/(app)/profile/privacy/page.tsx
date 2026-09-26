@@ -196,30 +196,6 @@ export default function PrivacySettingsPage() {
           <div className="skeleton h-40 rounded-2xl" />
         ) : (
           <>
-            <div>
-              <p className="text-xs font-bold px-1 mb-2" style={{ color: "#6b74a0" }}>
-                HIỆN TRÊN NEARBY
-              </p>
-              <div className="rounded-2xl overflow-hidden divide-y" style={{ border: "1px solid #1e2240" }}>
-                {(
-                  [
-                    { id: "everyone" as const, label: "Mọi người", sub: "Ai cũng có thể thấy bạn gần đây" },
-                    { id: "matches" as const, label: "Chỉ bạn bè", sub: "Chỉ người đã kết nối mới thấy" },
-                    { id: "hidden" as const, label: "Ẩn hoàn toàn", sub: "Không hiện trên Nearby" },
-                  ] as const
-                ).map((opt, i, arr) => (
-                  <div key={opt.id} style={{ borderBottom: i < arr.length - 1 ? "1px solid #1e2240" : "none" }}>
-                    <OptionRow
-                      label={opt.label}
-                      sub={opt.sub}
-                      selected={privacy.nearby_visibility === opt.id}
-                      onClick={() => void patch({ nearby_visibility: opt.id })}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-
             {/* HIỆN TRÊN NEARBY */}
             <div>
               <p className="text-xs font-bold px-1 mb-2 tracking-wider" style={{ color: "#6b74a0" }}>
