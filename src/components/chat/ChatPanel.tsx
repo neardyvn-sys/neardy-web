@@ -335,8 +335,10 @@ export default function ChatPanel({
     subscribeChatWs,
     setActiveConversationId,
     refreshMatches,
+    matches,
   } = useApp();
   const { startCall, phase: callPhase } = useCall();
+  const isMatched = matches.some((m) => m.userId === peer.id);
   const canChat = (isFriend || !!conversationId) && !!conversationId;
   const inCall = callPhase !== "idle";
 
@@ -724,12 +726,14 @@ export default function ChatPanel({
                     <span>👤</span> Trang cá nhân
                   </button>
 
-                  <button
-                    onClick={() => setShowUnmatchModal(true)}
-                    className="w-full px-4 py-2.5 text-left flex items-center gap-2 text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer border-t border-white/5"
-                  >
-                    <span>💔</span> Hủy tương hợp (Unmatch)
-                  </button>
+                  {isMatched && (
+                    <button
+                      onClick={() => setShowUnmatchModal(true)}
+                      className="w-full px-4 py-2.5 text-left flex items-center gap-2 text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer border-t border-white/5"
+                    >
+                      <span>💔</span> Hủy tương hợp (Unmatch)
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -737,7 +741,7 @@ export default function ChatPanel({
         )}
       </div>
 
-      {!isFriend && (
+      {isMatched && !isFriend && (
         <div
           className="flex-shrink-0 px-4 py-2.5 flex items-center justify-between gap-3"
           style={{

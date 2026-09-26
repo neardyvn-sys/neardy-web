@@ -43,8 +43,19 @@ export default function AppHeader() {
             border: `1px solid ${isProfileActive ? "#6c63ff" : "rgba(108, 99, 255, 0.3)"}`,
           }}
         >
-          {user?.avatar ? (
-            <img src={user.avatar} alt={user.name || "Cá nhân"} className="w-4 h-4 rounded-full object-cover" />
+          {user?.primaryPhoto ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={user.primaryPhoto}
+              alt={user.name || "Cá nhân"}
+              className="w-4 h-4 rounded-full object-cover"
+            />
+          ) : user?.avatar ? (
+            <span
+              className="w-4 h-4 rounded-full bg-violet-600 text-[10px] text-white flex items-center justify-center font-bold"
+            >
+              {user.avatar}
+            </span>
           ) : (
             <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <circle cx="12" cy="8" r="4" fill="currentColor" />
