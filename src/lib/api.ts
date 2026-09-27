@@ -284,6 +284,7 @@ export const likesApi = {
         last_message_at?: string | null;
         last_message_type?: string | null;
         online?: boolean;
+        is_friend?: boolean;
       }[];
     }>("/v1/matches"),
   sentLikes: (opts?: { kind?: string; limit?: number; offset?: number }) => {

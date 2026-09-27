@@ -54,6 +54,7 @@ export interface MatchItem {
   lastMessageAt?: string;
   unread?: number;
   online?: boolean;
+  isFriend?: boolean;
 }
 
 export type PostAudienceType = "friends" | "private" | "custom_include" | "custom_exclude";

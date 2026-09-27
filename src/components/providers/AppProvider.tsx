@@ -121,6 +121,7 @@ function mapMatches(
     lastMessageAt: m.last_message_at || undefined,
     unread: m.unread_count || 0,
     online: m.online === true,
+    isFriend: m.is_friend ?? true,
   }));
 }
 
@@ -160,7 +161,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const data = await likesApi.matches();
     const items = mapMatches(data);
     setMatches(items);
-    setFriends(new Set(items.map((m) => m.userId)));
+    setFriends(new Set(items.filter((m) => m.isFriend !== false).map((m) => m.userId)));
   }, []);
 
   refreshMatchesRef.current = refreshMatches;

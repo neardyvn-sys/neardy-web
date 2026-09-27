@@ -388,7 +388,11 @@ export default function ChatPanel({
       setCurrConversationId(conversationId);
     } else {
       const matchConv = matches.find((m) => m.userId === peer.id)?.conversationId;
-      if (matchConv) setCurrConversationId(matchConv);
+      if (matchConv) {
+        setCurrConversationId(matchConv);
+      } else {
+        void ensureConversation();
+      }
     }
   }, [conversationId, matches, peer.id]);
 
@@ -438,7 +442,7 @@ export default function ChatPanel({
     } catch (err: unknown) {
       console.error("Failed to create conversation:", err);
       const errMsg = (err as Error)?.message || "";
-      if (errMsg.includes("bạn bè") || !isFriend) {
+      if (errMsg.includes("bạn bè") || errMsg.includes("người lạ") || isBlockedByFriendsOnly) {
         setStrangerBlocked(true);
       }
     }
@@ -574,7 +578,7 @@ export default function ChatPanel({
         ) {
           return;
         }
-        if (errText.includes("bạn bè") || errText.includes("người lạ") || !isFriend) {
+        if (errText.includes("bạn bè") || errText.includes("người lạ") || isBlockedByFriendsOnly) {
           setStrangerBlocked(true);
           return;
         }
@@ -644,7 +648,7 @@ export default function ChatPanel({
     if (!targetConvId) {
       targetConvId = (await ensureConversation()) || undefined;
       if (!targetConvId) {
-        if (!isFriend || isBlockedByFriendsOnly) {
+        if (isBlockedByFriendsOnly) {
           setStrangerBlocked(true);
         } else {
           setError("Không thể gửi tin nhắn. Vui lòng thử lại.");
@@ -699,7 +703,7 @@ export default function ChatPanel({
     if (!targetConvId) {
       targetConvId = (await ensureConversation()) || undefined;
       if (!targetConvId) {
-        if (!isFriend || isBlockedByFriendsOnly) {
+        if (isBlockedByFriendsOnly) {
           setStrangerBlocked(true);
         } else {
           setError("Không thể gửi tệp. Vui lòng thử lại.");
