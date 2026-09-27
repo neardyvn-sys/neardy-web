@@ -479,7 +479,7 @@ export default function NearbyList({
               <button
                 key={u.id}
                 type="button"
-                onClick={() => openChat(u)}
+                onClick={() => router.push(`/messages/${u.id}`)}
                 className="w-full text-left card-hover rounded-2xl p-4 slide-up"
                 style={{
                   backgroundColor: "#111320",

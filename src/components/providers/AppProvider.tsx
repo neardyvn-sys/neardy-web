@@ -333,9 +333,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (type === "presence.update") {
       const updateUserId = String(msg.user_id || "");
       const isOnline = Boolean(msg.online);
+      const lastSeenAt = (msg.last_seen_at as string) || (isOnline ? null : new Date().toISOString());
       if (updateUserId) {
         setUsers((prev) =>
-          prev.map((u) => (u.id === updateUserId ? { ...u, online: isOnline } : u)),
+          prev.map((u) =>
+            u.id === updateUserId
+              ? { ...u, online: isOnline, lastSeenAt: isOnline ? null : (lastSeenAt || u.lastSeenAt) }
+              : u,
+          ),
         );
         setMatches((prev) =>
           prev.map((m) => (m.userId === updateUserId ? { ...m, online: isOnline } : m)),

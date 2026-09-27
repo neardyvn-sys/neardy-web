@@ -121,6 +121,7 @@ export type MeProfile = {
   privacy?: PrivacySettings;
   photos: { id: string; url: string; is_primary: boolean }[];
   online?: boolean;
+  last_seen_at?: string | null;
 };
 
 export type PrivacySettings = {
@@ -322,6 +323,14 @@ export const likesApi = {
       }[];
       peer_last_read_at?: string | null;
     }>(`/v1/conversations/${conversationId}/messages?limit=100`),
+};
+
+export const conversationsApi = {
+  direct: (userId: string) =>
+    api<{ conversation_id: string; match_id: string }>("/v1/conversations/direct", {
+      method: "POST",
+      body: JSON.stringify({ user_id: userId }),
+    }),
 };
 
 export type FriendRequestItem = {

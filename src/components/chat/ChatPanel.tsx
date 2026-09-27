@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Avatar from "@/components/ui/Avatar";
 import { useCall } from "@/components/call/CallProvider";
 import { useApp } from "@/components/providers/AppProvider";
-import { likesApi, uploadsApi } from "@/lib/api";
+import { conversationsApi, friendRequestsApi, friendsApi, likesApi, uploadsApi } from "@/lib/api";
 import type { CallLogData, ChatMessage, ChatMsgType, NearbyUser } from "@/lib/types";
 
 const EMOJIS = [
@@ -66,6 +66,33 @@ function formatCallSecs(seconds?: number) {
   return `${m}:${s < 10 ? "0" : ""}${s}`;
 }
 
+function formatLastSeen(lastSeenAt?: string | null): string {
+  if (!lastSeenAt) return "Không hoạt động";
+  const date = new Date(lastSeenAt);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  if (isNaN(diffMs) || diffMs < 0) return "Vừa mới truy cập";
+
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHours = Math.floor(diffMin / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffMin < 1) {
+    return "Vừa mới truy cập";
+  }
+  if (diffMin < 60) {
+    return `Truy cập ${diffMin} phút trước`;
+  }
+  if (diffHours < 24) {
+    return `Truy cập ${diffHours} giờ trước`;
+  }
+  if (diffDays < 30) {
+    return `Truy cập ${diffDays} ngày trước`;
+  }
+  return `Truy cập ngày ${date.toLocaleDateString("vi-VN")}`;
+}
+
 function CallLogBubble({
   msg,
   onCallBack,
@@ -111,9 +138,8 @@ function CallLogBubble({
 
   return (
     <div
-      className={`px-3.5 py-2.5 rounded-2xl text-xs flex flex-col gap-1.5 ${
-        isMe ? "ml-auto" : "mr-auto"
-      }`}
+      className={`px-3.5 py-2.5 rounded-2xl text-xs flex flex-col gap-1.5 ${isMe ? "ml-auto" : "mr-auto"
+        }`}
       style={{
         backgroundColor: isMissed ? "rgba(239, 68, 68, 0.12)" : "#161929",
         border: isMissed ? "1px solid rgba(239, 68, 68, 0.35)" : "1px solid #1e2240",
@@ -237,16 +263,16 @@ function MessageBubble({
             style={
               isMe
                 ? {
-                    background: isEmoji ? "transparent" : "linear-gradient(135deg, #6c63ff, #5b54e8)",
-                    color: "#fff",
-                    borderBottomRightRadius: "4px",
-                  }
+                  background: isEmoji ? "transparent" : "linear-gradient(135deg, #6c63ff, #5b54e8)",
+                  color: "#fff",
+                  borderBottomRightRadius: "4px",
+                }
                 : {
-                    backgroundColor: isEmoji ? "transparent" : "#161929",
-                    color: "#e8eaf2",
-                    border: isEmoji ? "none" : "1px solid #1e2240",
-                    borderBottomLeftRadius: "4px",
-                  }
+                  backgroundColor: isEmoji ? "transparent" : "#161929",
+                  color: "#e8eaf2",
+                  border: isEmoji ? "none" : "1px solid #1e2240",
+                  borderBottomLeftRadius: "4px",
+                }
             }
           >
             {msg.text}
@@ -302,6 +328,7 @@ export default function ChatPanel({
   myId,
   conversationId,
   isFriend = true,
+  onAddFriend,
   onClose,
 }: {
   peer: NearbyUser;
@@ -328,6 +355,8 @@ export default function ChatPanel({
   const router = useRouter();
   const [showUnmatchModal, setShowUnmatchModal] = useState(false);
   const [unmatching, setUnmatching] = useState(false);
+  const [showUnfriendModal, setShowUnfriendModal] = useState(false);
+  const [unfriending, setUnfriending] = useState(false);
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   const {
     chatWsReady,
@@ -336,11 +365,85 @@ export default function ChatPanel({
     setActiveConversationId,
     refreshMatches,
     matches,
+    toggleFriend,
   } = useApp();
   const { startCall, phase: callPhase } = useCall();
   const isMatched = matches.some((m) => m.userId === peer.id);
-  const canChat = (isFriend || !!conversationId) && !!conversationId;
+  const [strangerBlocked, setStrangerBlocked] = useState(false);
+  const [friendRequested, setFriendRequested] = useState(false);
+
+  const [currConversationId, setCurrConversationId] = useState<string | undefined>(
+    conversationId || peer.conversationId || matches.find((m) => m.userId === peer.id)?.conversationId,
+  );
+  const [peerOnline, setPeerOnline] = useState<boolean>(Boolean(peer.online));
+  const [peerLastSeenAt, setPeerLastSeenAt] = useState<string | null>(peer.lastSeenAt || null);
+
+  useEffect(() => {
+    setPeerOnline(Boolean(peer.online));
+    setPeerLastSeenAt(peer.lastSeenAt || null);
+  }, [peer.id, peer.online, peer.lastSeenAt]);
+
+  useEffect(() => {
+    if (conversationId) {
+      setCurrConversationId(conversationId);
+    } else {
+      const matchConv = matches.find((m) => m.userId === peer.id)?.conversationId;
+      if (matchConv) setCurrConversationId(matchConv);
+    }
+  }, [conversationId, matches, peer.id]);
+
+  const peerMsgPerm = peer.privacy?.message_permission ?? "everyone";
+  const isBlockedByFriendsOnly = peerMsgPerm === "friends" && !isFriend && !isMatched;
+  const canChat = !isBlockedByFriendsOnly;
   const inCall = callPhase !== "idle";
+
+  useEffect(() => {
+    if (isFriend) {
+      setStrangerBlocked(false);
+    }
+  }, [isFriend]);
+
+  useEffect(() => {
+    if (isFriend) {
+      setFriendRequested(false);
+      return;
+    }
+    let cancelled = false;
+    friendRequestsApi
+      .list()
+      .then((data) => {
+        if (cancelled) return;
+        const isSent = data.sent?.some((req) => req.user_id === peer.id);
+        if (isSent) setFriendRequested(true);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [peer.id, isFriend]);
+
+  const handleAddFriend = () => {
+    router.push(`/friends/${peer.id}`);
+  };
+
+  const ensureConversation = async (): Promise<string | null> => {
+    if (currConversationId) return currConversationId;
+    try {
+      const res = await conversationsApi.direct(peer.id);
+      if (res.conversation_id) {
+        setCurrConversationId(res.conversation_id);
+        void refreshMatches();
+        return res.conversation_id;
+      }
+    } catch (err: unknown) {
+      console.error("Failed to create conversation:", err);
+      const errMsg = (err as Error)?.message || "";
+      if (errMsg.includes("bạn bè") || !isFriend) {
+        setStrangerBlocked(true);
+      }
+    }
+    return null;
+  };
 
   const lastReadableMineId = (() => {
     if (!peerLastReadAt) return null;
@@ -355,19 +458,19 @@ export default function ChatPanel({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, typing, uploading]);
+  }, [messages, typing, uploading, strangerBlocked]);
 
   useEffect(() => {
-    if (!canChat || !conversationId) {
+    if (!currConversationId) {
       setActiveConversationId(null);
       return;
     }
-    setActiveConversationId(conversationId);
+    setActiveConversationId(currConversationId);
     return () => setActiveConversationId(null);
-  }, [canChat, conversationId, setActiveConversationId]);
+  }, [currConversationId, setActiveConversationId]);
 
   useEffect(() => {
-    if (!canChat || !conversationId) {
+    if (!currConversationId) {
       setMessages([]);
       setPeerLastReadAt(null);
       return;
@@ -376,12 +479,12 @@ export default function ChatPanel({
     let cancelled = false;
 
     const markRead = () => {
-      sendChatWs({ type: "message.read", conversation_id: conversationId });
+      sendChatWs({ type: "message.read", conversation_id: currConversationId });
     };
 
     (async () => {
       try {
-        const data = await likesApi.messages(conversationId);
+        const data = await likesApi.messages(currConversationId);
         if (cancelled) return;
         setMessages([...data.messages].reverse().map((m) => mapServerMessage(m, myId)));
         setPeerLastReadAt(data.peer_last_read_at || null);
@@ -395,7 +498,7 @@ export default function ChatPanel({
     const unsubscribe = subscribeChatWs((msg) => {
       if (msg.type === "message.new") {
         const m = (msg.message as Record<string, unknown>) || msg;
-        if (String(m.conversation_id || "") !== conversationId) return;
+        if (String(m.conversation_id || "") !== currConversationId) return;
         const mapped = mapServerMessage(
           {
             id: String(m.id),
@@ -425,12 +528,12 @@ export default function ChatPanel({
         });
         if (mapped.from === "them") markRead();
       }
-      if (msg.type === "message.read" && String(msg.conversation_id || "") === conversationId) {
+      if (msg.type === "message.read" && String(msg.conversation_id || "") === currConversationId) {
         if (String(msg.user_id || "") !== myId && msg.last_read_at) {
           setPeerLastReadAt(String(msg.last_read_at));
         }
       }
-      if (msg.type === "message.recalled" && String(msg.conversation_id || "") === conversationId) {
+      if (msg.type === "message.recalled" && String(msg.conversation_id || "") === currConversationId) {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === String(msg.message_id || "")
@@ -440,13 +543,22 @@ export default function ChatPanel({
         );
         setMenuMsgId(null);
       }
-      if (msg.type === "message.hidden" && String(msg.conversation_id || "") === conversationId) {
+      if (msg.type === "message.hidden" && String(msg.conversation_id || "") === currConversationId) {
         setMessages((prev) => prev.filter((m) => m.id !== String(msg.message_id || "")));
         setMenuMsgId(null);
       }
+      if (msg.type === "presence.update" && String(msg.user_id || "") === peer.id) {
+        const isOnline = Boolean(msg.online);
+        setPeerOnline(isOnline);
+        if (isOnline) {
+          setPeerLastSeenAt(null);
+        } else {
+          setPeerLastSeenAt(String(msg.last_seen_at || new Date().toISOString()));
+        }
+      }
       if (
         msg.type === "typing" &&
-        String(msg.conversation_id || "") === conversationId &&
+        String(msg.conversation_id || "") === currConversationId &&
         String(msg.user_id || "") !== myId
       ) {
         setTyping(true);
@@ -462,6 +574,10 @@ export default function ChatPanel({
         ) {
           return;
         }
+        if (errText.includes("bạn bè") || errText.includes("người lạ") || !isFriend) {
+          setStrangerBlocked(true);
+          return;
+        }
         setError(errText || "Không gửi được tin nhắn");
       }
     });
@@ -470,7 +586,7 @@ export default function ChatPanel({
       cancelled = true;
       unsubscribe();
     };
-  }, [canChat, conversationId, myId, chatWsReady, sendChatWs, subscribeChatWs]);
+  }, [currConversationId, myId, peer.id, chatWsReady, sendChatWs, subscribeChatWs]);
 
   useEffect(() => {
     if (!menuMsgId) return;
@@ -485,8 +601,9 @@ export default function ChatPanel({
   }, [menuMsgId]);
 
   const wsSend = (payload: Record<string, unknown>, optimistic?: ChatMessage) => {
-    if (!canChat) {
-      setError("Hãy kết bạn để bắt đầu nhắn tin");
+    if (isBlockedByFriendsOnly) {
+      setStrangerBlocked(true);
+      if (optimistic) setMessages((prev) => [...prev, optimistic]);
       return false;
     }
     if (!sendChatWs(payload)) {
@@ -497,70 +614,111 @@ export default function ChatPanel({
     return true;
   };
 
-  const sendText = (raw: string, asEmoji = false) => {
+  const sendText = async (raw: string, asEmoji = false) => {
     const text = raw.trim();
-    if (!text || !conversationId) return;
+    if (!text) return;
+
     const msgType: ChatMsgType = asEmoji ? "emoji" : "text";
     const createdAt = new Date().toISOString();
-    const ok = wsSend(
-      {
-        type: "message.send",
-        conversation_id: conversationId,
-        msg_type: msgType,
-        body: text,
-      },
-      {
-        id: `local-${Date.now()}`,
-        from: "me",
-        text,
-        msgType,
-        time: formatTime(createdAt),
-        createdAt,
-      },
-    );
-    if (ok) {
-      setInput("");
-      setShowEmoji(false);
-      setError("");
+    const optimisticMsg: ChatMessage = {
+      id: `local-${Date.now()}`,
+      from: "me",
+      text,
+      msgType,
+      time: formatTime(createdAt),
+      createdAt,
+    };
+
+    // Always show sent message in chat
+    setMessages((prev) => [...prev, optimisticMsg]);
+    setInput("");
+    setShowEmoji(false);
+    setError("");
+
+    if (isBlockedByFriendsOnly) {
+      setStrangerBlocked(true);
+      return;
+    }
+
+    let targetConvId = currConversationId;
+    if (!targetConvId) {
+      targetConvId = (await ensureConversation()) || undefined;
+      if (!targetConvId) {
+        if (!isFriend || isBlockedByFriendsOnly) {
+          setStrangerBlocked(true);
+        } else {
+          setError("Không thể gửi tin nhắn. Vui lòng thử lại.");
+        }
+        return;
+      }
+    }
+
+    const ok = sendChatWs({
+      type: "message.send",
+      conversation_id: targetConvId,
+      msg_type: msgType,
+      body: text,
+    });
+    if (!ok) {
+      setError("Mất kết nối chat. Thử lại.");
     }
   };
 
-  const sendMessage = () => sendText(input, false);
+  const sendMessage = () => void sendText(input, false);
 
   const sendEmoji = (emoji: string) => {
-    sendText(emoji, true);
+    void sendText(emoji, true);
   };
 
   const onPickMedia = async (file: File | undefined, kind: "image" | "video") => {
-    if (!file || !conversationId) return;
-    if (!canChat) {
-      setError("Hãy kết bạn để bắt đầu nhắn tin");
+    if (!file) return;
+    setError("");
+    const localId = `local-${Date.now()}`;
+    const createdAt = new Date().toISOString();
+    const tempUrl = URL.createObjectURL(file);
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: localId,
+        from: "me",
+        text: kind === "image" ? "📷 Ảnh" : "🎬 Video",
+        msgType: kind,
+        mediaUrl: tempUrl,
+        time: formatTime(createdAt),
+        createdAt,
+      },
+    ]);
+
+    if (isBlockedByFriendsOnly) {
+      setStrangerBlocked(true);
       return;
     }
-    setError("");
+
+    let targetConvId = currConversationId;
+    if (!targetConvId) {
+      targetConvId = (await ensureConversation()) || undefined;
+      if (!targetConvId) {
+        if (!isFriend || isBlockedByFriendsOnly) {
+          setStrangerBlocked(true);
+        } else {
+          setError("Không thể gửi tệp. Vui lòng thử lại.");
+        }
+        return;
+      }
+    }
+
     setUploading(kind);
     try {
       const uploaded = await uploadsApi.file(file, kind);
       const publicUrl = uploaded.public_url;
-      const createdAt = new Date().toISOString();
-      wsSend(
-        {
-          type: "message.send",
-          conversation_id: conversationId,
-          msg_type: kind,
-          body: kind === "image" ? "📷 Ảnh" : "🎬 Video",
-          media_url: publicUrl,
-        },
-        {
-          id: `local-${Date.now()}`,
-          from: "me",
-          text: kind === "image" ? "📷 Ảnh" : "🎬 Video",
-          msgType: kind,
-          mediaUrl: publicUrl,
-          time: formatTime(createdAt),
-          createdAt,
-        },
-      );
+      sendChatWs({
+        type: "message.send",
+        conversation_id: targetConvId,
+        msg_type: kind,
+        body: kind === "image" ? "📷 Ảnh" : "🎬 Video",
+        media_url: publicUrl,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload thất bại — kiểm tra R2 config");
     } finally {
@@ -569,18 +727,18 @@ export default function ChatPanel({
   };
 
   const notifyTyping = () => {
-    if (!canChat || !conversationId) return;
-    sendChatWs({ type: "typing", conversation_id: conversationId });
+    if (isBlockedByFriendsOnly || !currConversationId) return;
+    sendChatWs({ type: "typing", conversation_id: currConversationId });
   };
 
   const recallMessage = (messageId: string) => {
-    if (!conversationId) return;
+    if (!currConversationId) return;
     const ok = wsSend({ type: "message.recall", message_id: messageId });
     if (ok) setError("");
   };
 
   const hideMessage = (messageId: string) => {
-    if (!conversationId) return;
+    if (!currConversationId) return;
     // Optimistic remove; server confirms via message.hidden
     setMessages((prev) => prev.filter((m) => m.id !== messageId));
     setMenuMsgId(null);
@@ -599,6 +757,21 @@ export default function ChatPanel({
       console.error("Failed to unmatch:", err);
     } finally {
       setUnmatching(false);
+    }
+  };
+
+  const handleUnfriend = async () => {
+    setUnfriending(true);
+    try {
+      await friendsApi.unfriend(peer.id);
+      await refreshMatches();
+      setShowUnfriendModal(false);
+      onClose();
+    } catch (err) {
+      console.error("Failed to unfriend:", err);
+      setError("Hủy kết bạn thất bại. Vui lòng thử lại.");
+    } finally {
+      setUnfriending(false);
     }
   };
 
@@ -627,7 +800,7 @@ export default function ChatPanel({
             initials={peer.avatar}
             userId={peer.id}
             size="md"
-            online={peer.online}
+            online={isFriend && (peer.privacy?.show_online !== false) && peerOnline}
             photoUrl={peer.photoUrl}
             className="group-hover:scale-105 transition-transform"
           />
@@ -635,111 +808,200 @@ export default function ChatPanel({
             <p className="text-sm font-bold truncate group-hover:text-[#818cf8] transition-colors" style={{ color: "#e8eaf2" }}>
               {peer.name}
             </p>
-            <p className="text-xs" style={{ color: typing ? "#00e5ff" : "#6b74a0" }}>
-              {typing
-                ? "đang nhập…"
-                : uploading
-                  ? `Đang tải ${uploading} lên R2…`
-                  : peer.online
-                    ? "Đang online"
-                    : "Offline"}
-            </p>
+            {(() => {
+              if (typing) {
+                return (
+                  <p className="text-xs font-medium" style={{ color: "#00e5ff" }}>
+                    đang nhập…
+                  </p>
+                );
+              }
+              if (!isFriend) {
+                return (
+                  <p className="text-xs font-medium" style={{ color: "#f59e0b" }}>
+                    Người lạ
+                  </p>
+                );
+              }
+              const showOnline = peer.privacy?.show_online !== false;
+              if (!showOnline) {
+                return null;
+              }
+              if (peerOnline) {
+                return (
+                  <p className="text-xs font-medium" style={{ color: "#10b981" }}>
+                    Vừa mới truy cập
+                  </p>
+                );
+              }
+              return (
+                <p className="text-xs" style={{ color: "#8b95b8" }}>
+                  {formatLastSeen(peerLastSeenAt || peer.lastSeenAt)}
+                </p>
+              );
+            })()}
           </div>
         </button>
-        {canChat && (
-          <div className="flex items-center gap-1.5 flex-shrink-0">
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <button
+            type="button"
+            disabled={inCall}
+            onClick={async () => {
+              const peerCallPerm = peer.privacy?.call_permission ?? "everyone";
+              if (peerCallPerm === "friends" && !isFriend && !isMatched) {
+                setError("Đối phương chỉ nhận cuộc gọi từ bạn bè");
+                return;
+              }
+              let targetConvId = currConversationId;
+              if (!targetConvId) {
+                targetConvId = (await ensureConversation()) || undefined;
+                if (!targetConvId) {
+                  setError("Không thể khởi tạo cuộc gọi");
+                  return;
+                }
+              }
+              void startCall({
+                conversationId: targetConvId,
+                targetUserId: peer.id,
+                callType: "audio",
+                peer: {
+                  id: peer.id,
+                  name: peer.name,
+                  avatar: peer.avatar,
+                  photoUrl: peer.photoUrl,
+                },
+              });
+            }}
+            className="w-10 h-10 rounded-xl flex items-center justify-center transition-opacity disabled:opacity-40 cursor-pointer"
+            style={{ backgroundColor: "#1a1d2e", color: "#9b94ff" }}
+            title="Gọi thoại"
+            aria-label="Gọi thoại"
+          >
+            <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            disabled={inCall}
+            onClick={async () => {
+              const peerCallPerm = peer.privacy?.call_permission ?? "everyone";
+              if (peerCallPerm === "friends" && !isFriend && !isMatched) {
+                setError("Đối phương chỉ nhận cuộc gọi từ bạn bè");
+                return;
+              }
+              let targetConvId = currConversationId;
+              if (!targetConvId) {
+                targetConvId = (await ensureConversation()) || undefined;
+                if (!targetConvId) {
+                  setError("Không thể khởi tạo cuộc gọi");
+                  return;
+                }
+              }
+              void startCall({
+                conversationId: targetConvId,
+                targetUserId: peer.id,
+                callType: "video",
+                peer: {
+                  id: peer.id,
+                  name: peer.name,
+                  avatar: peer.avatar,
+                  photoUrl: peer.photoUrl,
+                },
+              });
+            }}
+            className="w-10 h-10 rounded-xl flex items-center justify-center transition-opacity disabled:opacity-40 cursor-pointer"
+            style={{ backgroundColor: "#1a1d2e", color: "#00e5ff" }}
+            title="Gọi video"
+            aria-label="Gọi video"
+          >
+            <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <polygon points="23 7 16 12 23 17 23 7" />
+              <rect x="1" y="5" width="15" height="14" rx="2" />
+            </svg>
+          </button>
+
+          {/* Menu Options Button */}
+          <div className="relative">
             <button
               type="button"
-              disabled={inCall}
-              onClick={() => {
-                if (!conversationId) return;
-                void startCall({
-                  conversationId,
-                  targetUserId: peer.id,
-                  callType: "audio",
-                  peer: {
-                    id: peer.id,
-                    name: peer.name,
-                    avatar: peer.avatar,
-                    photoUrl: peer.photoUrl,
-                  },
-                });
-              }}
-              className="w-10 h-10 rounded-xl flex items-center justify-center transition-opacity disabled:opacity-40 cursor-pointer"
-              style={{ backgroundColor: "#1a1d2e", color: "#9b94ff" }}
-              title="Gọi thoại"
-              aria-label="Gọi thoại"
+              onClick={() => setShowOptionsMenu((prev) => !prev)}
+              className="w-10 h-10 rounded-xl flex items-center justify-center transition-colors hover:bg-white/10 cursor-pointer"
+              style={{ backgroundColor: "#1a1d2e", color: "#a0a8c8" }}
+              title="Tùy chọn khác"
             >
-              <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              disabled={inCall}
-              onClick={() => {
-                if (!conversationId) return;
-                void startCall({
-                  conversationId,
-                  targetUserId: peer.id,
-                  callType: "video",
-                  peer: {
-                    id: peer.id,
-                    name: peer.name,
-                    avatar: peer.avatar,
-                    photoUrl: peer.photoUrl,
-                  },
-                });
-              }}
-              className="w-10 h-10 rounded-xl flex items-center justify-center transition-opacity disabled:opacity-40 cursor-pointer"
-              style={{ backgroundColor: "#1a1d2e", color: "#00e5ff" }}
-              title="Gọi video"
-              aria-label="Gọi video"
-            >
-              <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <polygon points="23 7 16 12 23 17 23 7" />
-                <rect x="1" y="5" width="15" height="14" rx="2" />
-              </svg>
+              ⋮
             </button>
 
-            {/* Menu Options Button */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setShowOptionsMenu((prev) => !prev)}
-                className="w-10 h-10 rounded-xl flex items-center justify-center transition-colors hover:bg-white/10 cursor-pointer"
-                style={{ backgroundColor: "#1a1d2e", color: "#a0a8c8" }}
-                title="Tùy chọn khác"
+            {showOptionsMenu && (
+              <div
+                className="absolute right-0 top-12 w-48 py-1.5 rounded-2xl bg-[#141729] border border-[#1e2240] shadow-2xl z-30 animate-fade-in text-xs font-medium"
+                onClick={() => setShowOptionsMenu(false)}
               >
-                ⋮
-              </button>
-
-              {showOptionsMenu && (
-                <div
-                  className="absolute right-0 top-12 w-48 py-1.5 rounded-2xl bg-[#141729] border border-[#1e2240] shadow-2xl z-30 animate-fade-in text-xs font-medium"
-                  onClick={() => setShowOptionsMenu(false)}
+                <button
+                  onClick={() => router.push(`/wall/${peer.id}`)}
+                  className="w-full px-4 py-2.5 text-left flex items-center gap-2 text-gray-300 hover:bg-white/5 transition-colors cursor-pointer"
                 >
-                  <button
-                    onClick={() => router.push(`/wall/${peer.id}`)}
-                    className="w-full px-4 py-2.5 text-left flex items-center gap-2 text-gray-300 hover:bg-white/5 transition-colors cursor-pointer"
-                  >
-                    <span>👤</span> Trang cá nhân
-                  </button>
+                  <span>👤</span> Trang cá nhân
+                </button>
 
-                  {isMatched && (
-                    <button
-                      onClick={() => setShowUnmatchModal(true)}
-                      className="w-full px-4 py-2.5 text-left flex items-center gap-2 text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer border-t border-white/5"
-                    >
-                      <span>💔</span> Hủy tương hợp (Unmatch)
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
+                {isFriend && (
+                  <button
+                    onClick={() => setShowUnfriendModal(true)}
+                    className="w-full px-4 py-2.5 text-left flex items-center gap-2 text-amber-400 hover:bg-amber-500/10 transition-colors cursor-pointer border-t border-white/5"
+                  >
+                    <span>👥</span> Hủy kết bạn (Xóa bạn)
+                  </button>
+                )}
+
+                {isMatched && (
+                  <button
+                    onClick={() => setShowUnmatchModal(true)}
+                    className="w-full px-4 py-2.5 text-left flex items-center gap-2 text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer border-t border-white/5"
+                  >
+                    <span>💔</span> Hủy tương hợp (Unmatch)
+                  </button>
+                )}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
+
+      {!isFriend && !isMatched && (
+        <button
+          type="button"
+          onClick={friendRequested ? undefined : handleAddFriend}
+          disabled={friendRequested}
+          className={`w-full py-2.5 px-4 flex items-center justify-center gap-2 text-xs font-semibold transition-colors ${
+            friendRequested ? "cursor-default opacity-85" : "cursor-pointer hover:bg-[#22263d]"
+          }`}
+          style={{
+            backgroundColor: friendRequested ? "#141729" : "#1a1d2e",
+            color: friendRequested ? "#a0a8c8" : "#e8eaf2",
+            border: "none",
+          }}
+        >
+          {friendRequested ? (
+            <>
+              <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} className="text-indigo-400">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <span>Đã gửi lời mời kết bạn</span>
+            </>
+          ) : (
+            <>
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="8.5" cy="7" r="4" />
+                <line x1="20" y1="8" x2="20" y2="14" />
+                <line x1="23" y1="11" x2="17" y2="11" />
+              </svg>
+              <span>Kết bạn</span>
+            </>
+          )}
+        </button>
+      )}
 
       {isMatched && !isFriend && (
         <div
@@ -775,14 +1037,14 @@ export default function ChatPanel({
       )}
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" onClick={() => setMenuMsgId(null)}>
-        {!isFriend && messages.length === 0 && (
+        {messages.length === 0 && (
           <div className="text-center py-12">
             <p className="text-3xl mb-3">👋</p>
-            <p className="text-sm font-semibold" style={{ color: "#6b74a0" }}>
-              Chưa thể nhắn tin
+            <p className="text-sm font-semibold" style={{ color: "#e8eaf2" }}>
+              Bắt đầu trò chuyện
             </p>
-            <p className="text-xs mt-1" style={{ color: "#3a4060" }}>
-              Nhấn Kết bạn phía trên để mở chat
+            <p className="text-xs mt-1" style={{ color: "#8a94b8" }}>
+              Hãy gửi lời chào đầu tiên đến {peer.name}!
             </p>
           </div>
         )}
@@ -796,9 +1058,9 @@ export default function ChatPanel({
             onRecall={() => recallMessage(msg.id)}
             onHide={() => hideMessage(msg.id)}
             onCallBack={(callType) => {
-              if (!conversationId) return;
+              if (!currConversationId) return;
               void startCall({
-                conversationId,
+                conversationId: currConversationId,
                 targetUserId: peer.id,
                 callType,
                 peer: {
@@ -827,6 +1089,28 @@ export default function ChatPanel({
             </div>
           </div>
         )}
+        {strangerBlocked && (
+          <div
+            className="p-3.5 rounded-2xl flex items-center gap-3 slide-up my-2"
+            style={{
+              backgroundColor: "#1a1d2e",
+              border: "1px solid #1e2240",
+            }}
+          >
+            <Avatar
+              initials={peer.avatar}
+              userId={peer.id}
+              size="sm"
+              photoUrl={peer.photoUrl}
+            />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs leading-relaxed" style={{ color: "#e8eaf2" }}>
+                <span className="font-bold text-white">{peer.name}</span> không nhận tin nhắn từ người lạ. Kết bạn ngay để gửi tin nhắn.
+              </p>
+            </div>
+          </div>
+        )}
+
         <div ref={bottomRef} />
       </div>
 
@@ -838,7 +1122,7 @@ export default function ChatPanel({
         </div>
       )}
 
-      {showEmoji && canChat && (
+      {showEmoji && (
         <div
           className="mx-4 mb-2 p-3 rounded-2xl grid grid-cols-8 gap-1 slide-up"
           style={{ backgroundColor: "#111320", border: "1px solid #1e2240" }}
@@ -861,8 +1145,6 @@ export default function ChatPanel({
         style={{
           borderTop: "1px solid #1e2240",
           backgroundColor: "#0d0f1a",
-          opacity: canChat ? 1 : 0.45,
-          pointerEvents: canChat ? "auto" : "none",
         }}
       >
         <input
@@ -889,8 +1171,8 @@ export default function ChatPanel({
         <button
           type="button"
           onClick={() => imageInputRef.current?.click()}
-          disabled={!!uploading || !canChat}
-          className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
+          disabled={!!uploading}
+          className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 cursor-pointer"
           style={{ backgroundColor: "#1a1d2e", color: "#a0a8c8" }}
           title="Gửi ảnh (R2)"
         >
@@ -903,8 +1185,8 @@ export default function ChatPanel({
         <button
           type="button"
           onClick={() => videoInputRef.current?.click()}
-          disabled={!!uploading || !canChat}
-          className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
+          disabled={!!uploading}
+          className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 cursor-pointer"
           style={{ backgroundColor: "#1a1d2e", color: "#a0a8c8" }}
           title="Gửi video (R2)"
         >
@@ -916,8 +1198,7 @@ export default function ChatPanel({
         <button
           type="button"
           onClick={() => setShowEmoji((v) => !v)}
-          disabled={!canChat}
-          className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 text-lg"
+          className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 text-lg cursor-pointer"
           style={{
             backgroundColor: showEmoji ? "rgba(108,99,255,0.2)" : "#1a1d2e",
             color: showEmoji ? "#9b94ff" : "#a0a8c8",
@@ -933,9 +1214,8 @@ export default function ChatPanel({
         >
           <input
             type="text"
-            placeholder={canChat ? "Nhắn tin..." : "Kết bạn để nhắn tin"}
+            placeholder="Nhắn tin..."
             value={input}
-            disabled={!canChat}
             onChange={(e) => {
               setInput(e.target.value);
               notifyTyping();
@@ -947,11 +1227,11 @@ export default function ChatPanel({
         </div>
         <button
           onClick={sendMessage}
-          disabled={!canChat || !input.trim() || !!uploading}
-          className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
+          disabled={!input.trim() || !!uploading}
+          className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 cursor-pointer transition-all"
           style={{
-            background: canChat && input.trim() ? "linear-gradient(135deg, #6c63ff, #5b54e8)" : "#1a1d2e",
-            color: canChat && input.trim() ? "#fff" : "#6b74a0",
+            background: input.trim() ? "linear-gradient(135deg, #6c63ff, #5b54e8)" : "#1a1d2e",
+            color: input.trim() ? "#fff" : "#6b74a0",
           }}
         >
           <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -995,6 +1275,47 @@ export default function ChatPanel({
                 className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:opacity-90 text-xs font-bold text-white shadow-lg transition-all cursor-pointer disabled:opacity-50"
               >
                 {unmatching ? "Đang hủy..." : "Xác nhận Hủy"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Unfriend Confirmation Modal */}
+      {showUnfriendModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+          <div
+            className="w-full max-w-sm rounded-3xl bg-[#111320] border border-[#1e2240] p-6 shadow-2xl space-y-4 text-center animate-slide-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center text-3xl mx-auto">
+              👥
+            </div>
+
+            <div className="space-y-1.5">
+              <h3 className="text-base font-bold text-white">Xóa kết bạn với {peer.name}?</h3>
+              <p className="text-xs text-gray-400 leading-relaxed">
+                Bạn và {peer.name} sẽ không còn là bạn bè của nhau nữa. Bạn vẫn có thể gửi lời mời kết bạn lại bất cứ lúc nào.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                disabled={unfriending}
+                onClick={() => setShowUnfriendModal(false)}
+                className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300 transition-colors cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+
+              <button
+                type="button"
+                disabled={unfriending}
+                onClick={handleUnfriend}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-rose-600 hover:opacity-90 text-xs font-bold text-white shadow-lg transition-all cursor-pointer disabled:opacity-50"
+              >
+                {unfriending ? "Đang xóa..." : "Xác nhận Xóa"}
               </button>
             </div>
           </div>

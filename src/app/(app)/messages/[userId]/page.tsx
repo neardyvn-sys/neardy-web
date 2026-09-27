@@ -20,7 +20,7 @@ export default function ChatPage() {
   const isFriend = friends.has(targetUserId);
 
   useEffect(() => {
-    if (nearby || match) return;
+    if (nearby?.privacy && nearby.lastSeenAt !== undefined) return;
     let cancelled = false;
     usersApi
       .get(targetUserId)
@@ -31,11 +31,13 @@ export default function ChatPage() {
           name: p.display_name,
           avatar: initialsFromName(p.display_name),
           status: p.bio || "Người dùng Neardy",
-          distanceKm: 0,
+          distanceKm: nearby?.distanceKm ?? 0,
           online: Boolean(p.online),
+          lastSeenAt: p.last_seen_at || null,
           bio: p.bio || "",
           age: p.age,
           photoUrl: p.photos.find((x) => x.is_primary)?.url || p.photos[0]?.url || null,
+          privacy: p.privacy,
         });
       })
       .catch(() => {
@@ -44,10 +46,10 @@ export default function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [targetUserId, nearby, match]);
+  }, [targetUserId, nearby]);
 
   const peer: NearbyUser | null = (() => {
-    // Prefer match as it contains realtime presence and primary conversation
+    const base = fetched || nearby;
     if (match) {
       return {
         id: match.userId,
@@ -55,17 +57,16 @@ export default function ChatPage() {
         avatar: initialsFromName(match.displayName),
         status: "Đã kết nối",
         distanceKm: nearby?.distanceKm ?? 0,
-        online: Boolean(match.online),
-        bio: nearby?.bio || "",
-        photoUrl: match.primaryPhoto || nearby?.photoUrl || null,
+        online: typeof match.online === "boolean" ? match.online : Boolean(base?.online),
+        lastSeenAt: nearby?.lastSeenAt ?? fetched?.lastSeenAt ?? null,
+        bio: nearby?.bio ?? fetched?.bio ?? "",
+        photoUrl: match.primaryPhoto || base?.photoUrl || null,
         conversationId: match.conversationId,
+        privacy: base?.privacy,
       };
     }
-    if (nearby) {
-      return { ...nearby };
-    }
-    if (fetched) {
-      return { ...fetched };
+    if (base) {
+      return { ...base };
     }
     return null;
   })();

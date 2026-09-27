@@ -78,12 +78,9 @@ export default function FriendRequestPage() {
         message: message.trim(),
         hide_activity: hideActivity,
       });
-      if (res.auto_accepted && res.conversation_id) {
-        await refreshMatches();
-        router.replace(`/messages/${userId}`);
-        return;
-      }
-      setSentOk(true);
+      await refreshMatches();
+      router.replace(`/messages/${userId}`);
+      return;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gửi yêu cầu thất bại");
     } finally {

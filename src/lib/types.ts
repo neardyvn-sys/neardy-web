@@ -5,11 +5,22 @@ export interface NearbyUser {
   status: string;
   distanceKm: number | null;
   online: boolean;
+  lastSeenAt?: string | null;
   bio: string;
   age?: number;
   gender?: string | null;
   photoUrl?: string | null;
   conversationId?: string;
+  privacy?: {
+    nearby_visibility?: "everyone" | "matches" | "hidden";
+    wall_visibility?: "everyone" | "friends" | "private";
+    show_age?: boolean;
+    show_distance?: boolean;
+    show_online?: boolean;
+    show_read_status?: boolean;
+    message_permission?: "everyone" | "friends";
+    call_permission?: "everyone" | "friends";
+  };
 }
 
 export type NearbyGender = "woman" | "man" | "nonbinary";
