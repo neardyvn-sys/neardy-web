@@ -35,7 +35,7 @@ export default function MatchesRow({ onMatchCountChange }: MatchesRowProps) {
       .matches()
       .then((res) => {
         if (!mounted) return;
-        const list = res.matches || [];
+        const list = (res.matches || []).filter((m) => m.is_friend !== false);
         setMatches(list);
         if (onMatchCountChange) {
           onMatchCountChange(list.length);

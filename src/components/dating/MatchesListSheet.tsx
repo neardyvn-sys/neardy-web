@@ -51,7 +51,7 @@ export default function MatchesListSheet({ isOpen, onClose }: MatchesListSheetPr
       likesApi
         .matches()
         .then((res) => {
-          setMatches(res.matches || []);
+          setMatches((res.matches || []).filter((m) => m.is_friend !== false));
         })
         .catch((err) => {
           console.error("Failed to load matches:", err);

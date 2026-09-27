@@ -368,7 +368,7 @@ export default function ChatPanel({
     toggleFriend,
   } = useApp();
   const { startCall, phase: callPhase } = useCall();
-  const isMatched = matches.some((m) => m.userId === peer.id);
+  const isMatched = matches.some((m) => m.userId === peer.id && m.isFriend !== false);
   const [strangerBlocked, setStrangerBlocked] = useState(false);
   const [friendRequested, setFriendRequested] = useState(false);
 
@@ -420,7 +420,7 @@ export default function ChatPanel({
         const isSent = data.sent?.some((req) => req.user_id === peer.id);
         if (isSent) setFriendRequested(true);
       })
-      .catch(() => {});
+      .catch(() => { });
     return () => {
       cancelled = true;
     };
@@ -759,6 +759,7 @@ export default function ChatPanel({
       onClose();
     } catch (err) {
       console.error("Failed to unmatch:", err);
+      setError("Hủy tương hợp thất bại. Vui lòng thử lại.");
     } finally {
       setUnmatching(false);
     }
@@ -977,9 +978,8 @@ export default function ChatPanel({
           type="button"
           onClick={friendRequested ? undefined : handleAddFriend}
           disabled={friendRequested}
-          className={`w-full py-2.5 px-4 flex items-center justify-center gap-2 text-xs font-semibold transition-colors ${
-            friendRequested ? "cursor-default opacity-85" : "cursor-pointer hover:bg-[#22263d]"
-          }`}
+          className={`w-full py-2.5 px-4 flex items-center justify-center gap-2 text-xs font-semibold transition-colors ${friendRequested ? "cursor-default opacity-85" : "cursor-pointer hover:bg-[#22263d]"
+            }`}
           style={{
             backgroundColor: friendRequested ? "#141729" : "#1a1d2e",
             color: friendRequested ? "#a0a8c8" : "#e8eaf2",
@@ -1026,7 +1026,6 @@ export default function ChatPanel({
           <button
             type="button"
             onClick={() => {
-              onClose();
               router.push(`/friends/${peer.id}`);
             }}
             className="flex-shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all hover:opacity-95 active:scale-95 cursor-pointer flex items-center gap-1 shadow-md"

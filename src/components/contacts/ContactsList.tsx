@@ -43,7 +43,9 @@ export default function ContactsList() {
   }, [loadInvites]);
 
   const list = matches.filter(
-    (m) => !search || m.displayName.toLowerCase().includes(search.toLowerCase()),
+    (m) =>
+      m.isFriend !== false &&
+      (!search || m.displayName.toLowerCase().includes(search.toLowerCase())),
   );
 
   const inviteList = inviteTab === "received" ? received : sent;
