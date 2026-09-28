@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/ui/Avatar";
 import { useCall } from "@/components/call/CallProvider";
@@ -453,13 +453,19 @@ export default function ChatPanel({
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [peerLastReadAt, setPeerLastReadAt] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [menuMsgId, setMenuMsgId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
   const [uploading, setUploading] = useState<"image" | "video" | null>(null);
   const [error, setError] = useState("");
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const prevScrollHeightRef = useRef<number>(0);
+  const isPrependingRef = useRef<boolean>(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
@@ -570,9 +576,22 @@ export default function ChatPanel({
     return null;
   })();
 
+  // Scroll anchoring when older messages are prepended
+  useLayoutEffect(() => {
+    if (isPrependingRef.current && scrollContainerRef.current) {
+      const container = scrollContainerRef.current;
+      const heightDiff = container.scrollHeight - prevScrollHeightRef.current;
+      container.scrollTop += heightDiff;
+      isPrependingRef.current = false;
+    }
+  }, [messages]);
+
+  // Auto-scroll when typing, uploading, or stranger blocked updates
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, typing, uploading, strangerBlocked]);
+    if (typing || uploading || strangerBlocked) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [typing, uploading, strangerBlocked]);
 
   useEffect(() => {
     if (!currConversationId) {
@@ -583,14 +602,62 @@ export default function ChatPanel({
     return () => setActiveConversationId(null);
   }, [currConversationId, setActiveConversationId]);
 
+  // Load older messages (Scroll Up)
+  const loadOlderMessages = async () => {
+    if (!currConversationId || loadingMore || !hasMore || initialLoading) return;
+    const oldestServerMsg = messages.find((m) => !m.id.startsWith("local-") && m.createdAt);
+    if (!oldestServerMsg || !oldestServerMsg.createdAt) {
+      setHasMore(false);
+      return;
+    }
+
+    setLoadingMore(true);
+    const container = scrollContainerRef.current;
+    if (container) {
+      prevScrollHeightRef.current = container.scrollHeight;
+      isPrependingRef.current = true;
+    }
+
+    try {
+      const data = await likesApi.messages(currConversationId, oldestServerMsg.createdAt, 30);
+      const olderMapped = [...data.messages].reverse().map((m) => mapServerMessage(m, myId));
+      if (olderMapped.length === 0) {
+        setHasMore(false);
+      } else {
+        setMessages((prev) => {
+          const existingIds = new Set(prev.map((p) => p.id));
+          const filtered = olderMapped.filter((o) => !existingIds.has(o.id));
+          return [...filtered, ...prev];
+        });
+        setHasMore(data.has_more ?? (data.messages.length >= 30));
+      }
+    } catch (err) {
+      console.error("Failed to load older messages:", err);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  const handleScroll = () => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    if (container.scrollTop < 80 && hasMore && !loadingMore && !initialLoading) {
+      void loadOlderMessages();
+    }
+  };
+
   useEffect(() => {
     if (!currConversationId) {
       setMessages([]);
       setPeerLastReadAt(null);
+      setHasMore(false);
+      setInitialLoading(false);
       return;
     }
 
     let cancelled = false;
+    setInitialLoading(true);
+    setHasMore(true);
 
     const markRead = () => {
       sendChatWs({ type: "message.read", conversation_id: currConversationId });
@@ -598,12 +665,20 @@ export default function ChatPanel({
 
     (async () => {
       try {
-        const data = await likesApi.messages(currConversationId);
+        const data = await likesApi.messages(currConversationId, undefined, 30);
         if (cancelled) return;
-        setMessages([...data.messages].reverse().map((m) => mapServerMessage(m, myId)));
+        const initialMessages = [...data.messages].reverse().map((m) => mapServerMessage(m, myId));
+        setMessages(initialMessages);
         setPeerLastReadAt(data.peer_last_read_at || null);
+        setHasMore(data.has_more ?? (data.messages.length >= 30));
+        setInitialLoading(false);
+        // Scroll to bottom after initial load
+        setTimeout(() => {
+          bottomRef.current?.scrollIntoView({ behavior: "instant" as ScrollBehavior });
+        }, 30);
       } catch (e) {
         console.warn(e);
+        if (!cancelled) setInitialLoading(false);
       }
     })();
 
@@ -1149,8 +1224,38 @@ export default function ChatPanel({
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col" onClick={() => setMenuMsgId(null)}>
-        {messages.length === 0 && (
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto px-4 py-4 flex flex-col"
+        onClick={() => setMenuMsgId(null)}
+      >
+        {/* Loading older messages indicator */}
+        {loadingMore && (
+          <div className="py-2.5 flex items-center justify-center gap-2">
+            <div className="w-4 h-4 rounded-full border-2 border-[#6c63ff] border-t-transparent animate-spin" />
+            <span className="text-xs font-medium" style={{ color: "#8a94b8" }}>
+              Đang tải tin nhắn cũ hơn...
+            </span>
+          </div>
+        )}
+
+        {!hasMore && messages.length > 0 && (
+          <div className="py-3 text-center">
+            <span
+              className="text-[11px] px-3 py-1 rounded-full inline-block font-medium"
+              style={{
+                backgroundColor: "rgba(22, 25, 41, 0.7)",
+                color: "#6b74a0",
+                border: "1px solid rgba(30, 34, 64, 0.6)",
+              }}
+            >
+              Đầu cuộc trò chuyện
+            </span>
+          </div>
+        )}
+
+        {messages.length === 0 && !initialLoading && (
           <div className="text-center py-12">
             <p className="text-3xl mb-3">👋</p>
             <p className="text-sm font-semibold" style={{ color: "#e8eaf2" }}>

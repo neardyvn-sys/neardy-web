@@ -310,8 +310,12 @@ export const likesApi = {
       }[];
     }>(`/v1/likes/sent${qs ? `?${qs}` : ""}`);
   },
-  messages: (conversationId: string) =>
-    api<{
+  messages: (conversationId: string, before?: string, limit: number = 30) => {
+    const params = new URLSearchParams();
+    if (before) params.set("before", before);
+    if (limit) params.set("limit", String(limit));
+    const qs = params.toString();
+    return api<{
       messages: {
         id: string;
         sender_id: string;
@@ -323,7 +327,9 @@ export const likesApi = {
         recalled?: boolean;
       }[];
       peer_last_read_at?: string | null;
-    }>(`/v1/conversations/${conversationId}/messages?limit=100`),
+      has_more?: boolean;
+    }>(`/v1/conversations/${conversationId}/messages${qs ? `?${qs}` : ""}`);
+  },
 };
 
 export const conversationsApi = {
