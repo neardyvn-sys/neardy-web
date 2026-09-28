@@ -750,9 +750,19 @@ export default function ChatPanel({
               p.id.startsWith("local-") &&
               p.from === "me" &&
               p.msgType === mapped.msgType &&
-              (mapped.mediaUrl ? p.mediaUrl === mapped.mediaUrl : p.text === mapped.text),
+              (mapped.msgType === "image" || mapped.msgType === "video"
+                ? true
+                : p.text === mapped.text),
           );
           if (idx >= 0) {
+            const localMsg = prev[idx];
+            if (localMsg.mediaUrl?.startsWith("blob:")) {
+              try {
+                URL.revokeObjectURL(localMsg.mediaUrl);
+              } catch {
+                // ignore
+              }
+            }
             const next = [...prev];
             next[idx] = mapped;
             return next;
