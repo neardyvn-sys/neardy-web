@@ -21,6 +21,69 @@ function formatTime(iso?: string) {
   });
 }
 
+function formatDateDivider(dateStr?: string): string {
+  if (!dateStr) return "";
+  const date = new Date(dateStr);
+  const now = new Date();
+
+  const isToday =
+    date.getDate() === now.getDate() &&
+    date.getMonth() === now.getMonth() &&
+    date.getFullYear() === now.getFullYear();
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday =
+    date.getDate() === yesterday.getDate() &&
+    date.getMonth() === yesterday.getMonth() &&
+    date.getFullYear() === yesterday.getFullYear();
+
+  const isSameYear = date.getFullYear() === now.getFullYear();
+
+  if (isToday) {
+    return "Hôm nay";
+  }
+  if (isYesterday) {
+    return "Hôm qua";
+  }
+
+  const weekday = date.toLocaleDateString("vi-VN", { weekday: "long" });
+  const capitalizedWeekday = weekday.charAt(0).toUpperCase() + weekday.slice(1);
+
+  if (isSameYear) {
+    return `${capitalizedWeekday}, ${date.getDate()} thg ${date.getMonth() + 1}`;
+  }
+  return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
+}
+
+function DateSeparator({ label }: { label: string }) {
+  return (
+    <div className="flex items-center justify-center my-3 select-none">
+      <div
+        className="px-3.5 py-1 rounded-full text-[11px] font-medium tracking-wide shadow-sm"
+        style={{
+          backgroundColor: "rgba(22, 25, 41, 0.88)",
+          backdropFilter: "blur(8px)",
+          color: "#8b95b8",
+          border: "1px solid rgba(30, 34, 64, 0.8)",
+        }}
+      >
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function TimeSeparator({ time }: { time: string }) {
+  return (
+    <div className="flex items-center justify-center my-2 select-none">
+      <span className="text-[10px] font-medium tracking-wider text-gray-500 uppercase px-2 py-0.5 rounded-md">
+        {time}
+      </span>
+    </div>
+  );
+}
+
 function mapServerMessage(
   m: {
     id: string;
@@ -181,6 +244,11 @@ function CallLogBubble({
 
 function MessageBubble({
   msg,
+  peer,
+  isFirstInGroup = true,
+  isLastInGroup = true,
+  showAvatar = true,
+  showTime = true,
   showRead,
   menuOpen,
   onToggleMenu,
@@ -189,6 +257,11 @@ function MessageBubble({
   onCallBack,
 }: {
   msg: ChatMessage;
+  peer: NearbyUser;
+  isFirstInGroup?: boolean;
+  isLastInGroup?: boolean;
+  showAvatar?: boolean;
+  showTime?: boolean;
   showRead?: boolean;
   menuOpen: boolean;
   onToggleMenu: () => void;
@@ -202,9 +275,41 @@ function MessageBubble({
     !msg.recalled &&
     (type === "emoji" || (type === "text" && /^[\p{Emoji}\s]+$/u.test(msg.text) && msg.text.length <= 8));
 
+  // Dynamic corner radius depending on position in message group
+  const bubbleRadiusStyle: React.CSSProperties = isMe
+    ? {
+      borderTopLeftRadius: "18px",
+      borderBottomLeftRadius: "18px",
+      borderTopRightRadius: isFirstInGroup ? "18px" : "6px",
+      borderBottomRightRadius: isLastInGroup ? "4px" : "6px",
+    }
+    : {
+      borderTopRightRadius: "18px",
+      borderBottomRightRadius: "18px",
+      borderTopLeftRadius: isFirstInGroup ? "18px" : "6px",
+      borderBottomLeftRadius: isLastInGroup ? "4px" : "6px",
+    };
+
   return (
-    <div className={`flex items-end gap-2 ${isMe ? "flex-row-reverse" : ""}`}>
-      <div className="max-w-[75%] relative">
+    <div className={`flex items-end gap-2 ${isMe ? "flex-row-reverse" : "flex-row"}`}>
+      {/* Peer Avatar on left side (them) */}
+      {!isMe && (
+        <div className="w-7 h-7 flex-shrink-0 mb-1">
+          {showAvatar ? (
+            <Avatar
+              initials={peer.avatar}
+              userId={peer.id}
+              photoUrl={peer.photoUrl}
+              size="xs"
+              className="rounded-full hover:scale-105 transition-transform"
+            />
+          ) : (
+            <div className="w-7 h-7" />
+          )}
+        </div>
+      )}
+
+      <div className="max-w-[75%] relative flex flex-col">
         {msg.recalled ? (
           <button
             type="button"
@@ -212,12 +317,12 @@ function MessageBubble({
               e.stopPropagation();
               onToggleMenu();
             }}
-            className="px-3.5 py-2.5 rounded-2xl text-sm italic text-left"
+            className="px-3.5 py-2.5 text-sm italic text-left"
             style={{
               backgroundColor: "#111320",
               color: "#6b74a0",
               border: "1px solid #1e2240",
-              ...(isMe ? { borderBottomRightRadius: "4px" } : { borderBottomLeftRadius: "4px" }),
+              ...bubbleRadiusStyle,
             }}
           >
             Tin nhắn đã được thu hồi
@@ -231,14 +336,17 @@ function MessageBubble({
               e.stopPropagation();
               onToggleMenu();
             }}
-            className="block overflow-hidden rounded-2xl text-left"
-            style={{ border: "1px solid #1e2240" }}
+            className="block overflow-hidden text-left"
+            style={{ border: "1px solid #1e2240", ...bubbleRadiusStyle }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={msg.mediaUrl} alt="" className="max-h-64 w-full object-cover" />
           </button>
         ) : type === "video" && msg.mediaUrl ? (
-          <div className="overflow-hidden rounded-2xl" style={{ border: "1px solid #1e2240", backgroundColor: "#111320" }}>
+          <div
+            className="overflow-hidden"
+            style={{ border: "1px solid #1e2240", backgroundColor: "#111320", ...bubbleRadiusStyle }}
+          >
             <video src={msg.mediaUrl} controls playsInline className="max-h-64 w-full" onClick={(e) => e.stopPropagation()} />
             <button
               type="button"
@@ -259,19 +367,19 @@ function MessageBubble({
               e.stopPropagation();
               onToggleMenu();
             }}
-            className={`px-3.5 py-2.5 rounded-2xl leading-relaxed text-left ${isEmoji ? "text-3xl" : "text-sm"}`}
+            className={`px-3.5 py-2.5 leading-relaxed text-left ${isEmoji ? "text-3xl" : "text-sm"}`}
             style={
               isMe
                 ? {
                   background: isEmoji ? "transparent" : "linear-gradient(135deg, #6c63ff, #5b54e8)",
                   color: "#fff",
-                  borderBottomRightRadius: "4px",
+                  ...(!isEmoji ? bubbleRadiusStyle : {}),
                 }
                 : {
                   backgroundColor: isEmoji ? "transparent" : "#161929",
                   color: "#e8eaf2",
                   border: isEmoji ? "none" : "1px solid #1e2240",
-                  borderBottomLeftRadius: "4px",
+                  ...(!isEmoji ? bubbleRadiusStyle : {}),
                 }
             }
           >
@@ -281,8 +389,8 @@ function MessageBubble({
 
         {menuOpen && !msg.id.startsWith("local-") && (
           <div
-            className={`absolute z-10 mt-1 flex flex-col overflow-hidden rounded-xl text-xs shadow-lg ${isMe ? "right-0" : "left-0"}`}
-            style={{ backgroundColor: "#161929", border: "1px solid #1e2240", minWidth: 140 }}
+            className={`absolute z-20 mt-1 flex flex-col overflow-hidden rounded-xl text-xs shadow-lg ${isMe ? "right-0" : "left-0"}`}
+            style={{ backgroundColor: "#161929", border: "1px solid #1e2240", minWidth: 140, top: "100%" }}
             onClick={(e) => e.stopPropagation()}
           >
             {isMe && !msg.recalled && (
@@ -312,12 +420,14 @@ function MessageBubble({
           </div>
         )}
 
-        <p className={`text-xs mt-1 ${isMe ? "text-right" : ""}`} style={{ color: "#3a4060" }}>
-          {msg.time}
-          {showRead && !msg.recalled ? (
-            <span style={{ color: "#6c63ff" }}> · Đã đọc</span>
-          ) : null}
-        </p>
+        {showTime && (
+          <p className={`text-[10px] mt-0.5 select-none ${isMe ? "text-right" : "text-left"}`} style={{ color: "#545d82" }}>
+            {msg.time}
+            {showRead && !msg.recalled ? (
+              <span style={{ color: "#6c63ff" }}> · Đã đọc</span>
+            ) : null}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -1039,7 +1149,7 @@ export default function ChatPanel({
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" onClick={() => setMenuMsgId(null)}>
+      <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col" onClick={() => setMenuMsgId(null)}>
         {messages.length === 0 && (
           <div className="text-center py-12">
             <p className="text-3xl mb-3">👋</p>
@@ -1051,33 +1161,109 @@ export default function ChatPanel({
             </p>
           </div>
         )}
-        {messages.map((msg) => (
-          <MessageBubble
-            key={msg.id}
-            msg={msg}
-            showRead={msg.id === lastReadableMineId}
-            menuOpen={menuMsgId === msg.id}
-            onToggleMenu={() => setMenuMsgId((id) => (id === msg.id ? null : msg.id))}
-            onRecall={() => recallMessage(msg.id)}
-            onHide={() => hideMessage(msg.id)}
-            onCallBack={(callType) => {
-              if (!currConversationId) return;
-              void startCall({
-                conversationId: currConversationId,
-                targetUserId: peer.id,
-                callType,
-                peer: {
-                  id: peer.id,
-                  name: peer.name,
-                  avatar: peer.avatar,
-                  photoUrl: peer.photoUrl,
-                },
-              });
-            }}
-          />
-        ))}
+
+        {(() => {
+          return messages.map((msg, i) => {
+            const prev = messages[i - 1];
+            const next = messages[i + 1];
+
+            const msgTime = msg.createdAt ? new Date(msg.createdAt).getTime() : 0;
+            const prevTime = prev?.createdAt ? new Date(prev.createdAt).getTime() : 0;
+            const nextTime = next?.createdAt ? new Date(next.createdAt).getTime() : 0;
+
+            // 1. Date Divider or Time Gap Divider
+            let dateDivider: string | null = null;
+            let timeDivider: string | null = null;
+
+            if (i === 0 && msg.createdAt) {
+              dateDivider = formatDateDivider(msg.createdAt);
+            } else if (prev && msg.createdAt && prev.createdAt) {
+              const prevDate = new Date(prev.createdAt);
+              const currDate = new Date(msg.createdAt);
+              const isDifferentDay =
+                prevDate.getFullYear() !== currDate.getFullYear() ||
+                prevDate.getMonth() !== currDate.getMonth() ||
+                prevDate.getDate() !== currDate.getDate();
+
+              if (isDifferentDay) {
+                dateDivider = formatDateDivider(msg.createdAt);
+              } else if (msgTime - prevTime > 20 * 60 * 1000) {
+                timeDivider = formatTime(msg.createdAt);
+              }
+            }
+
+            // 2. Grouping
+            const isSameSenderAsPrev =
+              !dateDivider &&
+              !timeDivider &&
+              Boolean(prev && prev.from === msg.from && msgTime - prevTime < 5 * 60 * 1000);
+
+            const isSameSenderAsNext = (() => {
+              if (!next || next.from !== msg.from || !next.createdAt || !msg.createdAt) return false;
+              const nextDate = new Date(next.createdAt);
+              const currDate = new Date(msg.createdAt);
+              const isNextDiffDay =
+                nextDate.getFullYear() !== currDate.getFullYear() ||
+                nextDate.getMonth() !== currDate.getMonth() ||
+                nextDate.getDate() !== currDate.getDate();
+              if (isNextDiffDay) return false;
+              if (nextTime - msgTime >= 20 * 60 * 1000) return false;
+              return nextTime - msgTime < 5 * 60 * 1000;
+            })();
+
+            const isFirstInGroup = !isSameSenderAsPrev;
+            const isLastInGroup = !isSameSenderAsNext;
+            const showAvatar = isLastInGroup;
+            const isLastReadableMine = msg.id === lastReadableMineId;
+            const showTime = isLastInGroup || isLastReadableMine;
+
+            return (
+              <div key={msg.id} className={`flex flex-col ${isLastInGroup ? "mb-3" : "mb-1"}`}>
+                {dateDivider && <DateSeparator label={dateDivider} />}
+                {timeDivider && <TimeSeparator time={timeDivider} />}
+                <MessageBubble
+                  msg={msg}
+                  peer={peer}
+                  isFirstInGroup={isFirstInGroup}
+                  isLastInGroup={isLastInGroup}
+                  showAvatar={showAvatar}
+                  showTime={showTime}
+                  showRead={isLastReadableMine}
+                  menuOpen={menuMsgId === msg.id}
+                  onToggleMenu={() => setMenuMsgId((id) => (id === msg.id ? null : msg.id))}
+                  onRecall={() => recallMessage(msg.id)}
+                  onHide={() => hideMessage(msg.id)}
+                  onCallBack={(callType) => {
+                    if (!currConversationId) return;
+                    void startCall({
+                      conversationId: currConversationId,
+                      targetUserId: peer.id,
+                      callType,
+                      peer: {
+                        id: peer.id,
+                        name: peer.name,
+                        avatar: peer.avatar,
+                        photoUrl: peer.photoUrl,
+                      },
+                    });
+                  }}
+                />
+              </div>
+            );
+          });
+        })()}
+
         {typing && (
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-2 mb-2">
+            <div className="w-7 h-7 flex-shrink-0 mb-1">
+              <Avatar
+                initials={peer.avatar}
+                userId={peer.id}
+                photoUrl={peer.photoUrl}
+                size="xs"
+                className="rounded-full"
+              />
+            </div>
             <div
               className="px-4 py-3 rounded-2xl flex gap-1 items-center"
               style={{ backgroundColor: "#161929", border: "1px solid #1e2240", borderBottomLeftRadius: "4px" }}

@@ -13,12 +13,13 @@ export default function Avatar({
 }: {
   initials: string;
   userId?: string | number;
-  size?: "sm" | "md" | "lg" | "xl";
+  size?: "xs" | "sm" | "md" | "lg" | "xl";
   online?: boolean;
   className?: string;
   photoUrl?: string | null;
 }) {
   const sizes = {
+    xs: "w-6 h-6 text-[10px] rounded-lg",
     sm: "w-7 h-7 text-xs rounded-lg",
     md: "w-10 h-10 text-xs rounded-xl",
     lg: "w-12 h-12 text-sm rounded-xl",
