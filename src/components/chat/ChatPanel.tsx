@@ -158,9 +158,11 @@ function formatLastSeen(lastSeenAt?: string | null): string {
 
 function CallLogBubble({
   msg,
+  showRead,
   onCallBack,
 }: {
   msg: ChatMessage;
+  showRead?: boolean;
   onCallBack?: (callType: "audio" | "video") => void;
 }) {
   const isMe = msg.from === "me";
@@ -228,7 +230,7 @@ function CallLogBubble({
         <button
           type="button"
           onClick={() => onCallBack(callType)}
-          className="w-full mt-1 py-1 px-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all card-hover"
+          className="w-full mt-1 py-1 px-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all card-hover cursor-pointer"
           style={{
             background: "linear-gradient(135deg, #6c63ff, #5b54e8)",
             color: "#ffffff",
@@ -238,6 +240,12 @@ function CallLogBubble({
           <span>Gọi lại</span>
         </button>
       )}
+      <div className="flex items-center justify-between text-[10px] pt-1 mt-0.5 border-t border-white/5 select-none" style={{ color: "#7e87ab" }}>
+        <span>{msg.time}</span>
+        {showRead && isMe && !msg.recalled && (
+          <span style={{ color: "#818cf8" }}>Đã đọc</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -248,7 +256,6 @@ function MessageBubble({
   isFirstInGroup = true,
   isLastInGroup = true,
   showAvatar = true,
-  showTime = true,
   showRead,
   menuOpen,
   onToggleMenu,
@@ -261,7 +268,6 @@ function MessageBubble({
   isFirstInGroup?: boolean;
   isLastInGroup?: boolean;
   showAvatar?: boolean;
-  showTime?: boolean;
   showRead?: boolean;
   menuOpen: boolean;
   onToggleMenu: () => void;
@@ -317,7 +323,7 @@ function MessageBubble({
               e.stopPropagation();
               onToggleMenu();
             }}
-            className="px-3.5 py-2.5 text-sm italic text-left"
+            className="px-3.5 py-2 text-sm italic text-left flex items-baseline justify-between gap-3 cursor-pointer"
             style={{
               backgroundColor: "#111320",
               color: "#6b74a0",
@@ -325,10 +331,13 @@ function MessageBubble({
               ...bubbleRadiusStyle,
             }}
           >
-            Tin nhắn đã được thu hồi
+            <span>Tin nhắn đã được thu hồi</span>
+            <span className="text-[10px] text-[#545d82] select-none flex-shrink-0 not-italic">
+              {msg.time}
+            </span>
           </button>
         ) : type === "call_log" ? (
-          <CallLogBubble msg={msg} onCallBack={onCallBack} />
+          <CallLogBubble msg={msg} showRead={showRead} onCallBack={onCallBack} />
         ) : type === "image" && msg.mediaUrl ? (
           <button
             type="button"
@@ -336,30 +345,64 @@ function MessageBubble({
               e.stopPropagation();
               onToggleMenu();
             }}
-            className="block overflow-hidden text-left"
+            className="block overflow-hidden text-left relative group cursor-pointer"
             style={{ border: "1px solid #1e2240", ...bubbleRadiusStyle }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={msg.mediaUrl} alt="" className="max-h-64 w-full object-cover" />
+            <div
+              className="absolute bottom-1.5 right-1.5 px-2 py-0.5 rounded-md text-[10px] text-white/90 flex items-center gap-1 select-none shadow-md"
+              style={{ backgroundColor: "rgba(10, 12, 20, 0.75)", backdropFilter: "blur(4px)" }}
+            >
+              <span>{msg.time}</span>
+              {showRead && !msg.recalled && (
+                <span className={isMe ? "text-white font-medium" : "text-[#818cf8]"}>· Đã đọc</span>
+              )}
+            </div>
           </button>
         ) : type === "video" && msg.mediaUrl ? (
           <div
-            className="overflow-hidden"
+            className="overflow-hidden relative"
             style={{ border: "1px solid #1e2240", backgroundColor: "#111320", ...bubbleRadiusStyle }}
           >
             <video src={msg.mediaUrl} controls playsInline className="max-h-64 w-full" onClick={(e) => e.stopPropagation()} />
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleMenu();
-              }}
-              className="w-full text-xs py-1.5"
-              style={{ color: "#6b74a0" }}
-            >
-              Tuỳ chọn
-            </button>
+            <div className="flex items-center justify-between px-3 py-1.5 text-xs" style={{ borderTop: "1px solid rgba(255, 255, 255, 0.05)" }}>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleMenu();
+                }}
+                className="text-xs hover:underline cursor-pointer"
+                style={{ color: "#6b74a0" }}
+              >
+                Tuỳ chọn
+              </button>
+              <div className="text-[10px] flex items-center gap-1 select-none" style={{ color: "#7e87ab" }}>
+                <span>{msg.time}</span>
+                {showRead && !msg.recalled && (
+                  <span className={isMe ? "text-white/90 font-medium" : "text-[#818cf8]"}>· Đã đọc</span>
+                )}
+              </div>
+            </div>
           </div>
+        ) : isEmoji ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleMenu();
+            }}
+            className="flex flex-col text-left cursor-pointer px-1 py-0.5"
+          >
+            <span className="text-3xl leading-none">{msg.text}</span>
+            <span className={`text-[10px] mt-1 select-none flex items-center gap-1 ${isMe ? "self-end text-white/60" : "self-start text-[#7e87ab]"}`}>
+              <span>{msg.time}</span>
+              {showRead && !msg.recalled ? (
+                <span className={isMe ? "text-white/80 font-medium" : "text-[#818cf8]"}> · Đã đọc</span>
+              ) : null}
+            </span>
+          </button>
         ) : (
           <button
             type="button"
@@ -367,23 +410,33 @@ function MessageBubble({
               e.stopPropagation();
               onToggleMenu();
             }}
-            className={`px-3.5 py-2.5 leading-relaxed text-left ${isEmoji ? "text-3xl" : "text-sm"}`}
+            className="px-3.5 py-2 leading-relaxed text-left text-sm flex flex-col min-w-[70px] cursor-pointer"
             style={
               isMe
                 ? {
-                  background: isEmoji ? "transparent" : "linear-gradient(135deg, #6c63ff, #5b54e8)",
+                  background: "linear-gradient(135deg, #6c63ff, #5b54e8)",
                   color: "#fff",
-                  ...(!isEmoji ? bubbleRadiusStyle : {}),
+                  ...bubbleRadiusStyle,
                 }
                 : {
-                  backgroundColor: isEmoji ? "transparent" : "#161929",
+                  backgroundColor: "#161929",
                   color: "#e8eaf2",
-                  border: isEmoji ? "none" : "1px solid #1e2240",
-                  ...(!isEmoji ? bubbleRadiusStyle : {}),
+                  border: "1px solid #1e2240",
+                  ...bubbleRadiusStyle,
                 }
             }
           >
-            {msg.text}
+            <span className="break-words whitespace-pre-wrap">{msg.text}</span>
+            <span
+              className={`text-[10px] flex items-center gap-1 self-end mt-0.5 -mb-0.5 select-none ${
+                isMe ? "text-white/70" : "text-[#7e87ab]"
+              }`}
+            >
+              <span>{msg.time}</span>
+              {showRead && !msg.recalled ? (
+                <span className={isMe ? "text-white font-medium" : "text-[#818cf8]"}> · Đã đọc</span>
+              ) : null}
+            </span>
           </button>
         )}
 
@@ -400,7 +453,7 @@ function MessageBubble({
                   e.stopPropagation();
                   onRecall();
                 }}
-                className="px-3 py-2 text-left hover:bg-[#1a1d2e]"
+                className="px-3 py-2 text-left hover:bg-[#1a1d2e] cursor-pointer"
                 style={{ color: "#e8eaf2" }}
               >
                 Thu hồi
@@ -412,21 +465,12 @@ function MessageBubble({
                 e.stopPropagation();
                 onHide();
               }}
-              className="px-3 py-2 text-left hover:bg-[#1a1d2e]"
+              className="px-3 py-2 text-left hover:bg-[#1a1d2e] cursor-pointer"
               style={{ color: "#f87171" }}
             >
               Xóa phía tôi
             </button>
           </div>
-        )}
-
-        {showTime && (
-          <p className={`text-[10px] mt-0.5 select-none ${isMe ? "text-right" : "text-left"}`} style={{ color: "#545d82" }}>
-            {msg.time}
-            {showRead && !msg.recalled ? (
-              <span style={{ color: "#6c63ff" }}> · Đã đọc</span>
-            ) : null}
-          </p>
         )}
       </div>
     </div>
@@ -1320,7 +1364,6 @@ export default function ChatPanel({
             const isLastInGroup = !isSameSenderAsNext;
             const showAvatar = isLastInGroup;
             const isLastReadableMine = msg.id === lastReadableMineId;
-            const showTime = isLastInGroup || isLastReadableMine;
 
             return (
               <div key={msg.id} className={`flex flex-col ${isLastInGroup ? "mb-3" : "mb-1"}`}>
@@ -1332,7 +1375,6 @@ export default function ChatPanel({
                   isFirstInGroup={isFirstInGroup}
                   isLastInGroup={isLastInGroup}
                   showAvatar={showAvatar}
-                  showTime={showTime}
                   showRead={isLastReadableMine}
                   menuOpen={menuMsgId === msg.id}
                   onToggleMenu={() => setMenuMsgId((id) => (id === msg.id ? null : msg.id))}
