@@ -129,7 +129,7 @@ export default function HomePage() {
       </section>
 
       <footer className="relative z-10 text-center pb-8 text-xs" style={{ color: "#2e3454" }}>
-        © 2026 Neardy · Tìm bạn gần bạn
+        © 2026 Neardy · Tìm quanh đây
       </footer>
     </div>
   );

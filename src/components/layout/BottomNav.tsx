@@ -12,79 +12,79 @@ const NAV_ITEMS: {
   label: string;
   icon: (active: boolean) => ReactNode;
 }[] = [
-  {
-    id: "nearby",
-    href: "/nearby",
-    label: "Gần đây",
-    icon: (a) => (
-      <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={a ? 2.5 : 2}>
-        <path
-          d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"
-          fill={a ? "currentColor" : "none"}
-        />
-        <circle
-          cx="12"
-          cy="9"
-          r="2.5"
-          fill={a ? "white" : "none"}
-          stroke={a ? "none" : "currentColor"}
-          strokeWidth={2}
-        />
-      </svg>
-    ),
-  },
-  {
-    id: "messages",
-    href: "/messages",
-    label: "Tin nhắn",
-    icon: (a) => (
-      <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={a ? 2.5 : 2}>
-        <path
-          d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
-          fill={a ? "currentColor" : "none"}
-        />
-      </svg>
-    ),
-  },
-  {
-    id: "feed",
-    href: "/feed",
-    label: "Tường nhà",
-    icon: (a) => (
-      <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <rect x="3" y="3" width="18" height="18" rx="2" fill={a ? "currentColor" : "none"} />
-        <path d="M3 9h18" stroke={a ? "white" : "currentColor"} />
-        <path d="M9 21V9" stroke={a ? "white" : "currentColor"} />
-      </svg>
-    ),
-  },
-  {
-    id: "dating",
-    href: "/dating",
-    label: "Hẹn hò",
-    icon: (a) => (
-      <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={a ? 2.5 : 2}>
-        <path
-          d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
-          fill={a ? "#ff4b72" : "none"}
-          stroke={a ? "#ff4b72" : "currentColor"}
-        />
-      </svg>
-    ),
-  },
-  {
-    id: "contacts",
-    href: "/contacts",
-    label: "Danh bạ",
-    icon: (a) => (
-      <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={a ? 2.5 : 2}>
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-        <circle cx="9" cy="7" r="4" fill={a ? "currentColor" : "none"} />
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
-      </svg>
-    ),
-  },
-];
+    {
+      id: "nearby",
+      href: "/nearby",
+      label: "Quanh đây",
+      icon: (a) => (
+        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={a ? 2.5 : 2}>
+          <path
+            d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"
+            fill={a ? "currentColor" : "none"}
+          />
+          <circle
+            cx="12"
+            cy="9"
+            r="2.5"
+            fill={a ? "white" : "none"}
+            stroke={a ? "none" : "currentColor"}
+            strokeWidth={2}
+          />
+        </svg>
+      ),
+    },
+    {
+      id: "messages",
+      href: "/messages",
+      label: "Tin nhắn",
+      icon: (a) => (
+        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={a ? 2.5 : 2}>
+          <path
+            d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+            fill={a ? "currentColor" : "none"}
+          />
+        </svg>
+      ),
+    },
+    {
+      id: "feed",
+      href: "/feed",
+      label: "Tường nhà",
+      icon: (a) => (
+        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <rect x="3" y="3" width="18" height="18" rx="2" fill={a ? "currentColor" : "none"} />
+          <path d="M3 9h18" stroke={a ? "white" : "currentColor"} />
+          <path d="M9 21V9" stroke={a ? "white" : "currentColor"} />
+        </svg>
+      ),
+    },
+    {
+      id: "dating",
+      href: "/dating",
+      label: "Hẹn hò",
+      icon: (a) => (
+        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={a ? 2.5 : 2}>
+          <path
+            d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
+            fill={a ? "#ff4b72" : "none"}
+            stroke={a ? "#ff4b72" : "currentColor"}
+          />
+        </svg>
+      ),
+    },
+    {
+      id: "contacts",
+      href: "/contacts",
+      label: "Danh bạ",
+      icon: (a) => (
+        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={a ? 2.5 : 2}>
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+          <circle cx="9" cy="7" r="4" fill={a ? "currentColor" : "none"} />
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+        </svg>
+      ),
+    },
+  ];
 
 export default function BottomNav() {
   const pathname = usePathname();

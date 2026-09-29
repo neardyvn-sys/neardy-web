@@ -30,7 +30,7 @@ export const FEATURES = [
 ];
 
 export const TAB_TITLES: Record<string, string> = {
-  nearby: "Gần đây",
+  nearby: "Tìm Quanh đây",
   messages: "Tin nhắn",
   contacts: "Danh bạ",
   feed: "Tường nhà",

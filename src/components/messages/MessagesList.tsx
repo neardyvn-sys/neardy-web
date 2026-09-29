@@ -127,7 +127,7 @@ export default function MessagesList() {
             Chưa có cuộc trò chuyện nào
           </p>
           <p className="text-xs mt-2" style={{ color: "#3a4060" }}>
-            Vào Gần đây và nhấn Kết bạn để bắt đầu chat
+            Vào Quanh đây và nhấn Kết bạn để bắt đầu chat
           </p>
         </div>
       )}
