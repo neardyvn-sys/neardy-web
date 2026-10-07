@@ -1,161 +1,575 @@
 "use client";
 
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useState, useEffect, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import Logo from "@/components/brand/Logo";
 import Field from "@/components/ui/Field";
 import { useApp } from "@/components/providers/AppProvider";
+import GoogleSignInButton from "./GoogleSignInButton";
+
+export type AuthView = "login" | "register" | "verify" | "forgot" | "reset";
 
 export default function AuthForm({ mode }: { mode: "login" | "register" }) {
-  const { loginWithPassword } = useApp();
+  const {
+    loginWithPassword,
+    registerWithPassword,
+    verifyEmail,
+    resendOtp,
+    forgotPassword,
+    resetPassword,
+    loginWithGoogle,
+  } = useApp();
+
+  const [view, setView] = useState<AuthView>(mode);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
+  const [showNewPass, setShowNewPass] = useState(false);
+
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
-  const [forgotMode, setForgotMode] = useState(false);
-  const [forgotEmail, setForgotEmail] = useState("");
-  const [forgotSent, setForgotSent] = useState(false);
-  const [forgotLoading, setForgotLoading] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
 
-  const isLogin = mode === "login";
+  // Sync mode with view if mode changes externally
+  useEffect(() => {
+    setView(mode);
+  }, [mode]);
 
-  const handleForgot = (e: FormEvent) => {
-    e.preventDefault();
-    if (!forgotEmail) return;
-    setForgotLoading(true);
-    setTimeout(() => {
-      setForgotLoading(false);
-      setForgotSent(true);
-    }, 1200);
-  };
+  // Resend cooldown timer
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setInterval(() => {
+      setCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldown]);
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
-    if (!email || !password) {
-      setError("Vui lòng điền đầy đủ thông tin.");
-      return;
-    }
-    if (!isLogin && !name) {
-      setError("Vui lòng nhập tên của bạn.");
-      return;
-    }
-    if (password.length < 6) {
-      setError("Mật khẩu tối thiểu 6 ký tự.");
+    setInfo("");
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !password) {
+      setError("Vui lòng điền đầy đủ email và mật khẩu.");
       return;
     }
     setLoading(true);
     try {
-      await loginWithPassword(email.trim(), password, isLogin ? undefined : name.trim());
+      await loginWithPassword(cleanEmail, password);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Đăng nhập thất bại");
+      const msg = err instanceof Error ? err.message : "Đăng nhập thất bại";
+      if (msg.toLowerCase().includes("chưa được xác thực") || msg.toLowerCase().includes("email_not_verified")) {
+        setView("verify");
+        setInfo("Email của bạn chưa được xác thực. Chúng tôi đã gửi mã OTP tới " + cleanEmail);
+        setCooldown(60);
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  if (forgotMode) {
+  const handleRegister = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setInfo("");
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanName = name.trim();
+
+    if (!cleanName) {
+      setError("Vui lòng nhập họ và tên của bạn.");
+      return;
+    }
+    if (!cleanEmail || !password) {
+      setError("Vui lòng điền đầy đủ email và mật khẩu.");
+      return;
+    }
+    if (password.length < 6) {
+      setError("Mật khẩu phải có tối thiểu 6 ký tự.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await registerWithPassword(cleanEmail, password, cleanName);
+      if (res.requires_email_verification) {
+        setView("verify");
+        setOtpCode("");
+        setInfo(res.message || "Chúng tôi đã gửi mã OTP tới email của bạn.");
+        setCooldown(60);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Đăng ký thất bại");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerify = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanCode = otpCode.trim();
+
+    if (!cleanEmail || !cleanCode) {
+      setError("Vui lòng nhập đủ email và mã OTP 6 số.");
+      return;
+    }
+    if (cleanCode.length !== 6) {
+      setError("Mã OTP phải gồm 6 chữ số.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await verifyEmail(cleanEmail, cleanCode);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Xác thực thất bại");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (cooldown > 0 || loading) return;
+    setError("");
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) {
+      setError("Vui lòng nhập email trước.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await resendOtp(cleanEmail);
+      setInfo(res.message || "Đã gửi lại mã OTP.");
+      setCooldown(60);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không thể gửi lại mã.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgot = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setInfo("");
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) {
+      setError("Vui lòng nhập địa chỉ email đã đăng ký.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await forgotPassword(cleanEmail);
+      setInfo(res.message || "Mã đặt lại mật khẩu đã được gửi đến email của bạn.");
+      setView("reset");
+      setOtpCode("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setCooldown(60);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Yêu cầu thất bại");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanCode = otpCode.trim();
+
+    if (!cleanEmail || !cleanCode || !newPassword) {
+      setError("Vui lòng điền đầy đủ thông tin.");
+      return;
+    }
+    if (cleanCode.length !== 6) {
+      setError("Mã OTP phải gồm 6 chữ số.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      setError("Mật khẩu mới tối thiểu 6 ký tự.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("Xác nhận mật khẩu không khớp.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await resetPassword(cleanEmail, cleanCode, newPassword);
+      setView("login");
+      setPassword("");
+      setOtpCode("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setInfo(res.message || "Đặt lại mật khẩu thành công. Vui lòng đăng nhập.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Đặt lại mật khẩu thất bại");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 1. VIEW: VERIFY EMAIL OTP
+  if (view === "verify") {
     return (
       <AuthShell>
         <button
+          type="button"
           onClick={() => {
-            setForgotMode(false);
-            setForgotSent(false);
-            setForgotEmail("");
+            setView("login");
+            setError("");
+            setInfo("");
           }}
-          className="flex items-center gap-1.5 mb-8 text-sm"
+          className="flex items-center gap-1.5 mb-6 text-sm hover:text-white transition-colors"
           style={{ color: "#6b74a0" }}
         >
           <BackIcon />
           Quay lại đăng nhập
         </button>
+
         <Logo size="md" />
-        {!forgotSent ? (
-          <>
-            <h2 className="mt-6 mb-1 text-2xl font-extrabold" style={{ color: "#e8eaf2" }}>
-              Quên mật khẩu?
-            </h2>
-            <p className="text-sm mb-8" style={{ color: "#6b74a0" }}>
-              Nhập email của bạn — chúng tôi sẽ gửi link đặt lại mật khẩu
-            </p>
-            <form onSubmit={handleForgot} className="space-y-3">
-              <Field label="Email đã đăng ký" icon={<MailIcon />}>
-                <input
-                  type="email"
-                  placeholder="ban@email.com"
-                  value={forgotEmail}
-                  onChange={(e) => setForgotEmail(e.target.value)}
-                  className="w-full bg-transparent outline-none text-sm"
-                  style={{ color: "#e8eaf2" }}
-                  autoFocus
-                />
-              </Field>
-              <button
-                type="submit"
-                disabled={forgotLoading || !forgotEmail}
-                className="w-full py-3.5 rounded-2xl font-bold text-sm mt-2 transition-all"
-                style={{
-                  background:
-                    forgotLoading || !forgotEmail
-                      ? "#1a1d2e"
-                      : "linear-gradient(135deg, #6c63ff, #5b54e8)",
-                  color: forgotLoading || !forgotEmail ? "#6b74a0" : "#fff",
-                  boxShadow:
-                    forgotLoading || !forgotEmail ? "none" : "0 8px 24px rgba(108,99,255,0.3)",
-                }}
-              >
-                {forgotLoading ? "Đang gửi…" : "Gửi link đặt lại"}
-              </button>
-            </form>
-          </>
-        ) : (
-          <div className="text-center mt-10">
-            <div
-              className="w-20 h-20 rounded-2xl mx-auto mb-6 flex items-center justify-center"
-              style={{
-                background: "linear-gradient(135deg, rgba(108,99,255,0.2), rgba(0,229,255,0.1))",
-                border: "1px solid rgba(108,99,255,0.3)",
-              }}
-            >
-              <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="#6c63ff" strokeWidth={1.5}>
-                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 1.27h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.91a16 16 0 0 0 6.08 6.08l.98-.98a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
-              </svg>
-            </div>
-            <h3 className="text-xl font-extrabold mb-2" style={{ color: "#e8eaf2" }}>
-              Kiểm tra email nhé!
-            </h3>
-            <p className="text-sm mb-1" style={{ color: "#a0a8c8" }}>
-              Chúng tôi đã gửi link đặt lại mật khẩu đến
-            </p>
-            <p className="text-sm font-bold mb-6" style={{ color: "#9b94ff" }}>
-              {forgotEmail}
-            </p>
-            <button
-              onClick={() => {
-                setForgotMode(false);
-                setForgotSent(false);
-                setForgotEmail("");
-              }}
-              className="w-full py-3.5 rounded-2xl font-bold text-sm"
-              style={{
-                background: "linear-gradient(135deg, #6c63ff, #5b54e8)",
-                color: "#fff",
-                boxShadow: "0 8px 24px rgba(108,99,255,0.3)",
-              }}
-            >
-              Quay lại đăng nhập
-            </button>
+
+        <div className="mt-6 mb-6">
+          <div
+            className="w-14 h-14 rounded-2xl mb-4 flex items-center justify-center"
+            style={{
+              background: "linear-gradient(135deg, rgba(108,99,255,0.2), rgba(0,229,255,0.1))",
+              border: "1px solid rgba(108,99,255,0.3)",
+            }}
+          >
+            <MailIcon size={24} color="#6c63ff" />
           </div>
+          <h2 className="text-2xl font-extrabold" style={{ color: "#e8eaf2" }}>
+            Xác thực email
+          </h2>
+          <p className="text-sm mt-1" style={{ color: "#a0a8c8" }}>
+            Mã OTP 6 số đã được gửi tới:
+          </p>
+          <p className="text-sm font-bold mt-0.5" style={{ color: "#9b94ff" }}>
+            {email}
+          </p>
+        </div>
+
+        {info && (
+          <p
+            className="text-xs px-3 py-2.5 rounded-xl mb-4"
+            style={{ backgroundColor: "rgba(108,99,255,0.12)", color: "#a5b4fc", border: "1px solid rgba(108,99,255,0.25)" }}
+          >
+            {info}
+          </p>
         )}
+
+        {error && (
+          <p
+            className="text-xs px-3 py-2.5 rounded-xl mb-4"
+            style={{ backgroundColor: "rgba(239,68,68,0.1)", color: "#f87171", border: "1px solid rgba(239,68,68,0.2)" }}
+          >
+            {error}
+          </p>
+        )}
+
+        <form onSubmit={handleVerify} className="space-y-4">
+          <Field label="Mã xác thực OTP (6 chữ số)" icon={<KeyIcon />}>
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="123456"
+              value={otpCode}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, "").slice(0, 6);
+                setOtpCode(val);
+                setError("");
+              }}
+              className="w-full bg-transparent outline-none text-lg font-mono tracking-widest text-center"
+              style={{ color: "#e8eaf2" }}
+              autoFocus
+            />
+          </Field>
+
+          <button
+            type="submit"
+            disabled={loading || otpCode.length !== 6}
+            className="w-full py-3.5 rounded-2xl font-bold text-sm transition-all"
+            style={{
+              background:
+                loading || otpCode.length !== 6
+                  ? "#1a1d2e"
+                  : "linear-gradient(135deg, #6c63ff, #5b54e8)",
+              color: loading || otpCode.length !== 6 ? "#6b74a0" : "#fff",
+              boxShadow:
+                loading || otpCode.length !== 6
+                  ? "none"
+                  : "0 8px 24px rgba(108,99,255,0.3)",
+            }}
+          >
+            {loading ? "Đang xác thực…" : "Xác nhận & Bắt đầu"}
+          </button>
+        </form>
+
+        <div className="text-center mt-6">
+          <p className="text-xs" style={{ color: "#6b74a0" }}>
+            Không nhận được mã?{" "}
+            {cooldown > 0 ? (
+              <span className="font-semibold" style={{ color: "#a5b4fc" }}>
+                Gửi lại sau {cooldown}s
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={loading}
+                className="font-semibold hover:underline"
+                style={{ color: "#9b94ff" }}
+              >
+                Gửi lại mã OTP
+              </button>
+            )}
+          </p>
+        </div>
       </AuthShell>
     );
   }
 
+  // 2. VIEW: FORGOT PASSWORD REQUEST
+  if (view === "forgot") {
+    return (
+      <AuthShell>
+        <button
+          type="button"
+          onClick={() => {
+            setView("login");
+            setError("");
+            setInfo("");
+          }}
+          className="flex items-center gap-1.5 mb-6 text-sm hover:text-white transition-colors"
+          style={{ color: "#6b74a0" }}
+        >
+          <BackIcon />
+          Quay lại đăng nhập
+        </button>
+
+        <Logo size="md" />
+
+        <div className="mt-6 mb-6">
+          <h2 className="text-2xl font-extrabold" style={{ color: "#e8eaf2" }}>
+            Quên mật khẩu?
+          </h2>
+          <p className="text-sm mt-1" style={{ color: "#6b74a0" }}>
+            Nhập email của bạn — chúng tôi sẽ gửi mã OTP để bạn đặt lại mật khẩu mới.
+          </p>
+        </div>
+
+        {error && (
+          <p
+            className="text-xs px-3 py-2.5 rounded-xl mb-4"
+            style={{ backgroundColor: "rgba(239,68,68,0.1)", color: "#f87171", border: "1px solid rgba(239,68,68,0.2)" }}
+          >
+            {error}
+          </p>
+        )}
+
+        <form onSubmit={handleForgot} className="space-y-4">
+          <Field label="Email đã đăng ký" icon={<MailIcon />}>
+            <input
+              type="email"
+              placeholder="ban@email.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full bg-transparent outline-none text-sm"
+              style={{ color: "#e8eaf2" }}
+              autoFocus
+            />
+          </Field>
+
+          <button
+            type="submit"
+            disabled={loading || !email.trim()}
+            className="w-full py-3.5 rounded-2xl font-bold text-sm transition-all"
+            style={{
+              background:
+                loading || !email.trim()
+                  ? "#1a1d2e"
+                  : "linear-gradient(135deg, #6c63ff, #5b54e8)",
+              color: loading || !email.trim() ? "#6b74a0" : "#fff",
+              boxShadow:
+                loading || !email.trim() ? "none" : "0 8px 24px rgba(108,99,255,0.3)",
+            }}
+          >
+            {loading ? "Đang gửi…" : "Gửi mã OTP đặt lại mật khẩu"}
+          </button>
+        </form>
+      </AuthShell>
+    );
+  }
+
+  // 3. VIEW: RESET PASSWORD WITH OTP
+  if (view === "reset") {
+    return (
+      <AuthShell>
+        <button
+          type="button"
+          onClick={() => {
+            setView("forgot");
+            setError("");
+            setInfo("");
+          }}
+          className="flex items-center gap-1.5 mb-6 text-sm hover:text-white transition-colors"
+          style={{ color: "#6b74a0" }}
+        >
+          <BackIcon />
+          Quay lại đổi email
+        </button>
+
+        <Logo size="md" />
+
+        <div className="mt-6 mb-6">
+          <h2 className="text-2xl font-extrabold" style={{ color: "#e8eaf2" }}>
+            Đặt lại mật khẩu
+          </h2>
+          <p className="text-sm mt-1" style={{ color: "#a0a8c8" }}>
+            Nhập mã OTP 6 số đã gửi tới <span className="font-bold text-white">{email}</span>
+          </p>
+        </div>
+
+        {info && (
+          <p
+            className="text-xs px-3 py-2.5 rounded-xl mb-4"
+            style={{ backgroundColor: "rgba(108,99,255,0.12)", color: "#a5b4fc", border: "1px solid rgba(108,99,255,0.25)" }}
+          >
+            {info}
+          </p>
+        )}
+
+        {error && (
+          <p
+            className="text-xs px-3 py-2.5 rounded-xl mb-4"
+            style={{ backgroundColor: "rgba(239,68,68,0.1)", color: "#f87171", border: "1px solid rgba(239,68,68,0.2)" }}
+          >
+            {error}
+          </p>
+        )}
+
+        <form onSubmit={handleResetPassword} className="space-y-3">
+          <Field label="Mã xác thực OTP (6 chữ số)" icon={<KeyIcon />}>
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="123456"
+              value={otpCode}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, "").slice(0, 6);
+                setOtpCode(val);
+                setError("");
+              }}
+              className="w-full bg-transparent outline-none text-base font-mono tracking-widest text-center"
+              style={{ color: "#e8eaf2" }}
+              autoFocus
+            />
+          </Field>
+
+          <Field
+            label="Mật khẩu mới"
+            icon={<LockIcon />}
+            action={
+              <button
+                type="button"
+                onClick={() => setShowNewPass(!showNewPass)}
+                style={{ color: "#6b74a0" }}
+              >
+                {showNewPass ? <EyeOffIcon /> : <EyeIcon />}
+              </button>
+            }
+          >
+            <input
+              type={showNewPass ? "text" : "password"}
+              placeholder="••••••••"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className="w-full bg-transparent outline-none text-sm"
+              style={{ color: "#e8eaf2" }}
+            />
+          </Field>
+
+          <Field label="Xác nhận mật khẩu mới" icon={<LockIcon />}>
+            <input
+              type={showNewPass ? "text" : "password"}
+              placeholder="••••••••"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="w-full bg-transparent outline-none text-sm"
+              style={{ color: "#e8eaf2" }}
+            />
+          </Field>
+
+          <button
+            type="submit"
+            disabled={loading || otpCode.length !== 6 || !newPassword}
+            className="w-full py-3.5 rounded-2xl font-bold text-sm mt-2 transition-all"
+            style={{
+              background:
+                loading || otpCode.length !== 6 || !newPassword
+                  ? "#1a1d2e"
+                  : "linear-gradient(135deg, #6c63ff, #5b54e8)",
+              color: loading || otpCode.length !== 6 || !newPassword ? "#6b74a0" : "#fff",
+              boxShadow:
+                loading || otpCode.length !== 6 || !newPassword
+                  ? "none"
+                  : "0 8px 24px rgba(108,99,255,0.3)",
+            }}
+          >
+            {loading ? "Đang xử lý…" : "Cập nhật mật khẩu"}
+          </button>
+        </form>
+
+        <div className="text-center mt-6">
+          <p className="text-xs" style={{ color: "#6b74a0" }}>
+            Không nhận được mã?{" "}
+            {cooldown > 0 ? (
+              <span className="font-semibold" style={{ color: "#a5b4fc" }}>
+                Gửi lại sau {cooldown}s
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={handleForgot}
+                disabled={loading}
+                className="font-semibold hover:underline"
+                style={{ color: "#9b94ff" }}
+              >
+                Gửi lại mã OTP
+              </button>
+            )}
+          </p>
+        </div>
+      </AuthShell>
+    );
+  }
+
+  // 4. MAIN VIEWS: LOGIN / REGISTER
+  const isLogin = view === "login";
+
   return (
     <AuthShell>
-      <Link href="/" className="flex items-center gap-1.5 mb-8 text-sm" style={{ color: "#6b74a0" }}>
+      <Link
+        href="/"
+        className="flex items-center gap-1.5 mb-8 text-sm hover:text-white transition-colors"
+        style={{ color: "#6b74a0" }}
+      >
         <BackIcon />
         Trang chủ
       </Link>
@@ -167,7 +581,25 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
         {isLogin ? "Đăng nhập để khám phá người xung quanh" : "Chỉ mất 30 giây để bắt đầu"}
       </p>
 
-      <form onSubmit={handleSubmit} className="space-y-3">
+      {info && (
+        <p
+          className="text-xs px-3 py-2.5 rounded-xl mb-4"
+          style={{ backgroundColor: "rgba(108,99,255,0.12)", color: "#a5b4fc", border: "1px solid rgba(108,99,255,0.25)" }}
+        >
+          {info}
+        </p>
+      )}
+
+      {error && (
+        <p
+          className="text-xs px-3 py-2 rounded-xl mb-4"
+          style={{ backgroundColor: "rgba(239,68,68,0.1)", color: "#f87171" }}
+        >
+          {error}
+        </p>
+      )}
+
+      <form onSubmit={isLogin ? handleLogin : handleRegister} className="space-y-3">
         {!isLogin && (
           <Field label="Tên của bạn" icon={<UserIcon />}>
             <input
@@ -194,7 +626,11 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           label="Mật khẩu"
           icon={<LockIcon />}
           action={
-            <button type="button" onClick={() => setShowPass(!showPass)} style={{ color: "#6b74a0" }}>
+            <button
+              type="button"
+              onClick={() => setShowPass(!showPass)}
+              style={{ color: "#6b74a0" }}
+            >
               {showPass ? <EyeOffIcon /> : <EyeIcon />}
             </button>
           }
@@ -213,22 +649,17 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           <div className="flex justify-end">
             <button
               type="button"
-              onClick={() => setForgotMode(true)}
-              className="text-xs font-semibold"
+              onClick={() => {
+                setView("forgot");
+                setError("");
+                setInfo("");
+              }}
+              className="text-xs font-semibold hover:underline"
               style={{ color: "#9b94ff" }}
             >
               Quên mật khẩu?
             </button>
           </div>
-        )}
-
-        {error && (
-          <p
-            className="text-xs px-3 py-2 rounded-xl"
-            style={{ backgroundColor: "rgba(239,68,68,0.1)", color: "#f87171" }}
-          >
-            {error}
-          </p>
         )}
 
         <button
@@ -247,26 +678,40 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
 
       <div className="flex items-center gap-3 my-6">
         <div className="flex-1 h-px" style={{ backgroundColor: "#1e2240" }} />
-        <span className="text-xs" style={{ color: "#2e3454" }}>
+        <span className="text-xs" style={{ color: "#6b74a0" }}>
           hoặc
         </span>
         <div className="flex-1 h-px" style={{ backgroundColor: "#1e2240" }} />
       </div>
 
-      <button
-        className="w-full py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-all"
-        style={{ backgroundColor: "#111320", color: "#a0a8c8", border: "1px solid #1e2240" }}
-        onClick={() => setError("Google OAuth: cấu hình GOOGLE_CLIENT_ID trên API rồi dùng id_token.")}
-      >
-        <GoogleIcon />
-        Tiếp tục với Google
-      </button>
+      <GoogleSignInButton
+        mode={isLogin ? "login" : "register"}
+        disabled={loading}
+        onSuccess={async (idToken) => {
+          setError("");
+          try {
+            await loginWithGoogle(idToken);
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Đăng nhập Google thất bại");
+          }
+        }}
+        onError={(msg) => setError(msg)}
+      />
 
       <p className="text-center text-xs mt-6" style={{ color: "#6b74a0" }}>
         {isLogin ? "Chưa có tài khoản?" : "Đã có tài khoản?"}{" "}
-        <Link href={isLogin ? "/register" : "/login"} className="font-semibold" style={{ color: "#9b94ff" }}>
+        <button
+          type="button"
+          onClick={() => {
+            setView(isLogin ? "register" : "login");
+            setError("");
+            setInfo("");
+          }}
+          className="font-semibold hover:underline"
+          style={{ color: "#9b94ff" }}
+        >
           {isLogin ? "Đăng ký" : "Đăng nhập"}
-        </Link>
+        </button>
       </p>
     </AuthShell>
   );
@@ -300,14 +745,16 @@ function BackIcon() {
     </svg>
   );
 }
-function MailIcon() {
+
+function MailIcon({ size = 15, color = "currentColor" }: { size?: number; color?: string }) {
   return (
-    <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <svg width={size} height={size} fill="none" viewBox="0 0 24 24" stroke={color} strokeWidth={2}>
       <rect x="2" y="4" width="20" height="16" rx="2" />
       <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
     </svg>
   );
 }
+
 function UserIcon() {
   return (
     <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -316,6 +763,7 @@ function UserIcon() {
     </svg>
   );
 }
+
 function LockIcon() {
   return (
     <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -324,6 +772,15 @@ function LockIcon() {
     </svg>
   );
 }
+
+function KeyIcon() {
+  return (
+    <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path d="M21 2l-2 2m-1.5 1.5L14 9a5 5 0 1 0 3 3l3.5-3.5 1.5 1.5 2-2-3-3z" />
+    </svg>
+  );
+}
+
 function EyeIcon() {
   return (
     <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -332,22 +789,13 @@ function EyeIcon() {
     </svg>
   );
 }
+
 function EyeOffIcon() {
   return (
     <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
       <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
       <line x1="1" y1="1" x2="23" y2="23" />
-    </svg>
-  );
-}
-function GoogleIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24">
-      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
     </svg>
   );
 }

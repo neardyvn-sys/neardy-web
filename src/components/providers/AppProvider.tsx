@@ -55,7 +55,13 @@ interface AppContextValue {
   refreshNearby: (filters?: NearbyFilters) => Promise<void>;
   refreshMatches: () => Promise<void>;
   refreshUser: () => Promise<void>;
-  loginWithPassword: (email: string, password: string, displayName?: string) => Promise<void>;
+  loginWithPassword: (email: string, password: string) => Promise<void>;
+  registerWithPassword: (email: string, password: string, displayName: string) => Promise<{ requires_email_verification: boolean; email: string; message: string }>;
+  verifyEmail: (email: string, code: string) => Promise<void>;
+  resendOtp: (email: string) => Promise<{ ok: boolean; message: string }>;
+  forgotPassword: (email: string) => Promise<{ ok: boolean; message: string }>;
+  resetPassword: (email: string, code: string, newPassword: string) => Promise<{ ok: boolean; message: string }>;
+  loginWithGoogle: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
   toggleFriend: (id: string) => Promise<{ conversationId?: string; matched: boolean }>;
   passUser: (id: string) => Promise<void>;
@@ -482,10 +488,55 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [bootstrapSession]);
 
   const loginWithPassword = useCallback(
-    async (email: string, password: string, displayName?: string) => {
-      const tokens = displayName
-        ? await authApi.register({ email, password, display_name: displayName })
-        : await authApi.login({ email, password });
+    async (email: string, password: string) => {
+      const tokens = await authApi.login({ email, password });
+      setTokens(tokens.access_token, tokens.refresh_token);
+      let profile = await meApi.get();
+      profile = await ensureOnboarded(profile);
+      setUser(profileToAuth(profile));
+      setReady(true);
+      await syncLocation();
+      router.push("/nearby");
+    },
+    [router, syncLocation],
+  );
+
+  const registerWithPassword = useCallback(
+    async (email: string, password: string, displayName: string) => {
+      return await authApi.register({ email, password, display_name: displayName });
+    },
+    [],
+  );
+
+  const verifyEmail = useCallback(
+    async (email: string, code: string) => {
+      const tokens = await authApi.verifyEmail({ email, code });
+      setTokens(tokens.access_token, tokens.refresh_token);
+      let profile = await meApi.get();
+      profile = await ensureOnboarded(profile);
+      setUser(profileToAuth(profile));
+      setReady(true);
+      await syncLocation();
+      router.push("/nearby");
+    },
+    [router, syncLocation],
+  );
+
+  const resendOtp = useCallback(async (email: string) => {
+    return await authApi.resendOtp({ email });
+  }, []);
+
+  const forgotPassword = useCallback(async (email: string) => {
+    return await authApi.forgotPassword({ email });
+  }, []);
+
+  const resetPassword = useCallback(async (email: string, code: string, newPassword: string) => {
+    return await authApi.resetPassword({ email, code, new_password: newPassword });
+  }, []);
+
+  const loginWithGoogle = useCallback(
+    async (idToken: string) => {
+      const tokens = await authApi.google({ id_token: idToken });
       setTokens(tokens.access_token, tokens.refresh_token);
       let profile = await meApi.get();
       profile = await ensureOnboarded(profile);
@@ -554,6 +605,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshMatches,
       refreshUser,
       loginWithPassword,
+      registerWithPassword,
+      verifyEmail,
+      resendOtp,
+      forgotPassword,
+      resetPassword,
+      loginWithGoogle,
       logout,
       toggleFriend,
       passUser,
@@ -578,6 +635,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshMatches,
       refreshUser,
       loginWithPassword,
+      registerWithPassword,
+      verifyEmail,
+      resendOtp,
+      forgotPassword,
+      resetPassword,
+      loginWithGoogle,
       logout,
       toggleFriend,
       passUser,

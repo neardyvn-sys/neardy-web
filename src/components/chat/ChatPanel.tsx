@@ -3,9 +3,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/ui/Avatar";
+import ChatInfoDrawer from "./ChatInfoDrawer";
 import { useCall } from "@/components/call/CallProvider";
 import { useApp } from "@/components/providers/AppProvider";
-import { conversationsApi, friendRequestsApi, friendsApi, likesApi, uploadsApi } from "@/lib/api";
+import { conversationsApi, friendRequestsApi, friendsApi, likesApi, uploadsApi, type FriendRequestItem } from "@/lib/api";
 import type { CallLogData, ChatMessage, ChatMsgType, NearbyUser } from "@/lib/types";
 
 const EMOJIS = [
@@ -517,7 +518,7 @@ export default function ChatPanel({
   const [unmatching, setUnmatching] = useState(false);
   const [showUnfriendModal, setShowUnfriendModal] = useState(false);
   const [unfriending, setUnfriending] = useState(false);
-  const [showOptionsMenu, setShowOptionsMenu] = useState(false);
+  const [showInfoDrawer, setShowInfoDrawer] = useState(false);
   const {
     chatWsReady,
     sendChatWs,
@@ -525,12 +526,17 @@ export default function ChatPanel({
     setActiveConversationId,
     refreshMatches,
     matches,
+    friends,
     toggleFriend,
   } = useApp();
+  const [localIsFriend, setLocalIsFriend] = useState(false);
+  const isFriendEffective = Boolean(isFriend || friends?.has(peer.id) || localIsFriend);
   const { startCall, phase: callPhase } = useCall();
   const isMatched = matches.some((m) => m.userId === peer.id && m.isFriend !== false);
   const [strangerBlocked, setStrangerBlocked] = useState(false);
   const [friendRequested, setFriendRequested] = useState(false);
+  const [receivedRequest, setReceivedRequest] = useState<FriendRequestItem | null>(null);
+  const [handlingFriendRequest, setHandlingFriendRequest] = useState(false);
 
   const [currConversationId, setCurrConversationId] = useState<string | undefined>(
     conversationId || peer.conversationId || matches.find((m) => m.userId === peer.id)?.conversationId,
@@ -557,19 +563,20 @@ export default function ChatPanel({
   }, [conversationId, matches, peer.id]);
 
   const peerMsgPerm = peer.privacy?.message_permission ?? "everyone";
-  const isBlockedByFriendsOnly = peerMsgPerm === "friends" && !isFriend && !isMatched;
+  const isBlockedByFriendsOnly = peerMsgPerm === "friends" && !isFriendEffective && !isMatched;
   const canChat = !isBlockedByFriendsOnly;
   const inCall = callPhase !== "idle";
 
   useEffect(() => {
-    if (isFriend) {
+    if (isFriendEffective) {
       setStrangerBlocked(false);
     }
-  }, [isFriend]);
+  }, [isFriendEffective]);
 
   useEffect(() => {
-    if (isFriend) {
+    if (isFriendEffective) {
       setFriendRequested(false);
+      setReceivedRequest(null);
       return;
     }
     let cancelled = false;
@@ -578,16 +585,50 @@ export default function ChatPanel({
       .then((data) => {
         if (cancelled) return;
         const isSent = data.sent?.some((req) => req.user_id === peer.id);
-        if (isSent) setFriendRequested(true);
+        setFriendRequested(Boolean(isSent));
+        const received = data.received?.find((req) => req.user_id === peer.id) || null;
+        setReceivedRequest(received);
       })
       .catch(() => { });
     return () => {
       cancelled = true;
     };
-  }, [peer.id, isFriend]);
+  }, [peer.id, isFriendEffective]);
 
   const handleAddFriend = () => {
     router.push(`/friends/${peer.id}`);
+  };
+
+  const handleAcceptFriendRequest = async () => {
+    if (!receivedRequest || handlingFriendRequest) return;
+    setHandlingFriendRequest(true);
+    try {
+      await friendRequestsApi.accept(receivedRequest.id);
+      setReceivedRequest(null);
+      setLocalIsFriend(true);
+      if (onAddFriend) {
+        void onAddFriend();
+      }
+      await refreshMatches();
+    } catch (err) {
+      console.error("Failed to accept friend request:", err);
+      setError("Chấp nhận lời mời kết bạn thất bại.");
+    } finally {
+      setHandlingFriendRequest(false);
+    }
+  };
+
+  const handleRejectFriendRequest = async () => {
+    if (!receivedRequest || handlingFriendRequest) return;
+    setHandlingFriendRequest(true);
+    try {
+      await friendRequestsApi.reject(receivedRequest.id);
+      setReceivedRequest(null);
+    } catch (err) {
+      console.error("Failed to reject friend request:", err);
+    } finally {
+      setHandlingFriendRequest(false);
+    }
   };
 
   const ensureConversation = async (): Promise<string | null> => {
@@ -1044,7 +1085,7 @@ export default function ChatPanel({
             initials={peer.avatar}
             userId={peer.id}
             size="md"
-            online={isFriend && (peer.privacy?.show_online !== false) && peerOnline}
+            online={isFriendEffective && (peer.privacy?.show_online !== false) && peerOnline}
             photoUrl={peer.photoUrl}
             className="group-hover:scale-105 transition-transform"
           />
@@ -1060,7 +1101,7 @@ export default function ChatPanel({
                   </p>
                 );
               }
-              if (!isFriend) {
+              if (!isFriendEffective) {
                 return (
                   <p className="text-xs font-medium" style={{ color: "#f59e0b" }}>
                     Người lạ
@@ -1092,7 +1133,7 @@ export default function ChatPanel({
             disabled={inCall}
             onClick={async () => {
               const peerCallPerm = peer.privacy?.call_permission ?? "everyone";
-              if (peerCallPerm === "friends" && !isFriend && !isMatched) {
+              if (peerCallPerm === "friends" && !isFriendEffective && !isMatched) {
                 setError("Đối phương chỉ nhận cuộc gọi từ bạn bè");
                 return;
               }
@@ -1130,7 +1171,7 @@ export default function ChatPanel({
             disabled={inCall}
             onClick={async () => {
               const peerCallPerm = peer.privacy?.call_permission ?? "everyone";
-              if (peerCallPerm === "friends" && !isFriend && !isMatched) {
+              if (peerCallPerm === "friends" && !isFriendEffective && !isMatched) {
                 setError("Đối phương chỉ nhận cuộc gọi từ bạn bè");
                 return;
               }
@@ -1165,54 +1206,63 @@ export default function ChatPanel({
             </svg>
           </button>
 
-          {/* Menu Options Button */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowOptionsMenu((prev) => !prev)}
-              className="w-10 h-10 rounded-xl flex items-center justify-center transition-colors hover:bg-white/10 cursor-pointer"
-              style={{ backgroundColor: "#1a1d2e", color: "#a0a8c8" }}
-              title="Tùy chọn khác"
-            >
-              ⋮
-            </button>
-
-            {showOptionsMenu && (
-              <div
-                className="absolute right-0 top-12 w-48 py-1.5 rounded-2xl bg-[#141729] border border-[#1e2240] shadow-2xl z-30 animate-fade-in text-xs font-medium"
-                onClick={() => setShowOptionsMenu(false)}
-              >
-                <button
-                  onClick={() => router.push(`/wall/${peer.id}`)}
-                  className="w-full px-4 py-2.5 text-left flex items-center gap-2 text-gray-300 hover:bg-white/5 transition-colors cursor-pointer"
-                >
-                  <span>👤</span> Trang cá nhân
-                </button>
-
-                {isFriend && (
-                  <button
-                    onClick={() => setShowUnfriendModal(true)}
-                    className="w-full px-4 py-2.5 text-left flex items-center gap-2 text-amber-400 hover:bg-amber-500/10 transition-colors cursor-pointer border-t border-white/5"
-                  >
-                    <span>👥</span> Hủy kết bạn (Xóa bạn)
-                  </button>
-                )}
-
-                {isMatched && (
-                  <button
-                    onClick={() => setShowUnmatchModal(true)}
-                    className="w-full px-4 py-2.5 text-left flex items-center gap-2 text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer border-t border-white/5"
-                  >
-                    <span>💔</span> Hủy tương hợp (Unmatch)
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
+          {/* Menu / Info Drawer Options Button */}
+          <button
+            type="button"
+            onClick={() => setShowInfoDrawer(true)}
+            className="w-10 h-10 rounded-xl flex items-center justify-center transition-colors hover:bg-white/10 cursor-pointer"
+            style={{ backgroundColor: "#1a1d2e", color: "#a0a8c8" }}
+            title="Thông tin hội thoại"
+            aria-label="Thông tin hội thoại"
+          >
+            ⋮
+          </button>
         </div>
       </div>
 
-      {!isFriend && !isMatched && (
+      {/* Incoming Friend Request Action Banner */}
+      {receivedRequest && !isFriendEffective && (
+        <div
+          className="flex-shrink-0 px-4 py-3 flex items-center justify-between gap-3 border-b animate-fade-in"
+          style={{
+            backgroundColor: "rgba(108, 99, 255, 0.12)",
+            borderBottomColor: "rgba(108, 99, 255, 0.3)",
+          }}
+        >
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold flex items-center gap-1.5" style={{ color: "#9b94ff" }}>
+              <span>👋</span> {peer.name} đã gửi lời mời kết bạn
+            </p>
+            {receivedRequest.message && (
+              <p className="text-[11px] text-gray-300 truncate mt-0.5 italic">
+                &ldquo;{receivedRequest.message}&rdquo;
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              type="button"
+              disabled={handlingFriendRequest}
+              onClick={handleRejectFriendRequest}
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 transition-colors cursor-pointer disabled:opacity-50"
+            >
+              Từ chối
+            </button>
+            <button
+              type="button"
+              disabled={handlingFriendRequest}
+              onClick={handleAcceptFriendRequest}
+              className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 active:scale-95 cursor-pointer flex items-center gap-1 shadow-md disabled:opacity-50"
+              style={{ background: "linear-gradient(135deg, #6c63ff, #5b54e8)" }}
+            >
+              {handlingFriendRequest ? "Đang xử lý..." : "Đồng ý"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Outgoing Friend Request or Add Friend Button */}
+      {!receivedRequest && !isFriendEffective && !isMatched && (
         <button
           type="button"
           onClick={friendRequested ? undefined : handleAddFriend}
@@ -1246,7 +1296,8 @@ export default function ChatPanel({
         </button>
       )}
 
-      {isMatched && !isFriend && (
+      {/* Matched Banner */}
+      {!receivedRequest && isMatched && !isFriendEffective && (
         <div
           className="flex-shrink-0 px-4 py-2.5 flex items-center justify-between gap-3"
           style={{
@@ -1259,22 +1310,30 @@ export default function ChatPanel({
               <span>💖</span> Hai bạn đã tương hợp hẹn hò!
             </p>
             <p className="text-[11px] mt-0.5" style={{ color: "#8a94b8" }}>
-              Kết bạn để xem toàn bộ bài viết & chia sẻ khoảnh khắc
+              {friendRequested
+                ? "Đã gửi lời mời kết bạn, đang chờ đối phương phản hồi"
+                : "Kết bạn để xem toàn bộ bài viết & chia sẻ khoảnh khắc"}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              router.push(`/friends/${peer.id}`);
-            }}
-            className="flex-shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all hover:opacity-95 active:scale-95 cursor-pointer flex items-center gap-1 shadow-md"
-            style={{
-              background: "linear-gradient(135deg, #ff4b72, #6c63ff)",
-              color: "#fff",
-            }}
-          >
-            <span>👥</span> Kết bạn
-          </button>
+          {friendRequested ? (
+            <span className="text-xs px-3 py-1.5 rounded-xl bg-white/5 text-indigo-300 font-semibold">
+              Đã gửi lời mời
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                router.push(`/friends/${peer.id}`);
+              }}
+              className="flex-shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all hover:opacity-95 active:scale-95 cursor-pointer flex items-center gap-1 shadow-md"
+              style={{
+                background: "linear-gradient(135deg, #ff4b72, #6c63ff)",
+                color: "#fff",
+              }}
+            >
+              <span>👥</span> Kết bạn
+            </button>
+          )}
         </div>
       )}
 
@@ -1585,6 +1644,54 @@ export default function ChatPanel({
           </svg>
         </button>
       </div>
+
+      {/* Slide-over Info Drawer */}
+      <ChatInfoDrawer
+        isOpen={showInfoDrawer}
+        onClose={() => setShowInfoDrawer(false)}
+        peer={peer}
+        peerOnline={peerOnline}
+        peerLastSeenAt={peerLastSeenAt}
+        isFriend={isFriendEffective}
+        isMatched={isMatched}
+        messages={messages}
+        onStartCall={(callType) => {
+          let targetConvId = currConversationId;
+          if (!targetConvId) {
+            void ensureConversation().then((id) => {
+              if (!id) {
+                setError("Không thể khởi tạo cuộc gọi");
+                return;
+              }
+              void startCall({
+                conversationId: id,
+                targetUserId: peer.id,
+                callType,
+                peer: {
+                  id: peer.id,
+                  name: peer.name,
+                  avatar: peer.avatar,
+                  photoUrl: peer.photoUrl,
+                },
+              });
+            });
+            return;
+          }
+          void startCall({
+            conversationId: targetConvId,
+            targetUserId: peer.id,
+            callType,
+            peer: {
+              id: peer.id,
+              name: peer.name,
+              avatar: peer.avatar,
+              photoUrl: peer.photoUrl,
+            },
+          });
+        }}
+        onUnfriendClick={() => setShowUnfriendModal(true)}
+        onUnmatchClick={() => setShowUnmatchModal(true)}
+      />
 
       {/* Unmatch Confirmation Modal */}
       {showUnmatchModal && (

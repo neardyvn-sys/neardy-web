@@ -373,7 +373,7 @@ export default function ContactsList() {
                 <p className="text-xs mt-1" style={{ color: "#6b74a0" }}>
                   Không có bạn bè nào khớp với từ khóa{" "}
                   <span className="font-semibold" style={{ color: "#9b94ff" }}>
-                    "{search}"
+                    &ldquo;{search}&rdquo;
                   </span>
                 </p>
               </>

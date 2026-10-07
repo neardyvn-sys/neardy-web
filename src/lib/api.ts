@@ -79,15 +79,53 @@ export async function api<T>(
   return json.data as T;
 }
 
+export interface AuthTokens {
+  access_token: string;
+  refresh_token: string;
+  user_id: string;
+  expires_in: number;
+}
+
+export interface RegisterPendingResult {
+  requires_email_verification: boolean;
+  email: string;
+  message: string;
+}
+
 export const authApi = {
   register: (body: { email: string; password: string; display_name: string }) =>
-    api<{ access_token: string; refresh_token: string; user_id: string; expires_in: number }>(
+    api<RegisterPendingResult>(
       "/v1/auth/register",
       { method: "POST", body: JSON.stringify(body), auth: false },
     ),
   login: (body: { email: string; password: string }) =>
-    api<{ access_token: string; refresh_token: string; user_id: string; expires_in: number }>(
+    api<AuthTokens>(
       "/v1/auth/login",
+      { method: "POST", body: JSON.stringify(body), auth: false },
+    ),
+  verifyEmail: (body: { email: string; code: string }) =>
+    api<AuthTokens>(
+      "/v1/auth/verify-email",
+      { method: "POST", body: JSON.stringify(body), auth: false },
+    ),
+  resendOtp: (body: { email: string }) =>
+    api<{ ok: boolean; message: string }>(
+      "/v1/auth/resend-otp",
+      { method: "POST", body: JSON.stringify(body), auth: false },
+    ),
+  forgotPassword: (body: { email: string }) =>
+    api<{ ok: boolean; message: string }>(
+      "/v1/auth/forgot-password",
+      { method: "POST", body: JSON.stringify(body), auth: false },
+    ),
+  resetPassword: (body: { email: string; code: string; new_password: string }) =>
+    api<{ ok: boolean; message: string }>(
+      "/v1/auth/reset-password",
+      { method: "POST", body: JSON.stringify(body), auth: false },
+    ),
+  google: (body: { id_token: string }) =>
+    api<AuthTokens>(
+      "/v1/auth/google",
       { method: "POST", body: JSON.stringify(body), auth: false },
     ),
   logout: async () => {

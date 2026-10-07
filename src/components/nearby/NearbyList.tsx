@@ -201,12 +201,12 @@ function FilterSheet({
               </p>
               <div className="grid grid-cols-3 gap-2">
                 {[
-                  { id: "man", label: "Nam" },
-                  { id: "woman", label: "Nữ" },
-                  { id: "all", label: "Tất cả" },
+                  { id: "man" as NearbyGender, label: "Nam" },
+                  { id: "woman" as NearbyGender, label: "Nữ" },
+                  { id: "all" as const, label: "Tất cả" },
                 ].map((opt) => {
-                  const isAll = genders.length === 0 || genders.includes("all" as any);
-                  const active = opt.id === "all" ? isAll : (!isAll && genders.includes(opt.id as any));
+                  const isAll = genders.length === 0;
+                  const active = opt.id === "all" ? isAll : genders.includes(opt.id);
                   return (
                     <button
                       key={opt.id}
@@ -273,9 +273,9 @@ function FilterSheet({
               </p>
               <div className="grid grid-cols-3 gap-2">
                 {[
-                  { id: "man", label: "Nam" },
-                  { id: "woman", label: "Nữ" },
-                  { id: "all", label: "Tất cả" },
+                  { id: "man" as const, label: "Nam" },
+                  { id: "woman" as const, label: "Nữ" },
+                  { id: "all" as const, label: "Tất cả" },
                 ].map((opt) => {
                   const active = visibilityGender === opt.id;
                   return (
@@ -283,7 +283,7 @@ function FilterSheet({
                       key={opt.id}
                       type="button"
                       onClick={() => {
-                        setDraft((p) => ({ ...p, visibilityGender: opt.id as any }));
+                        setDraft((p) => ({ ...p, visibilityGender: opt.id }));
                       }}
                       className="py-2.5 rounded-xl text-xs font-bold transition-all text-center"
                       style={
