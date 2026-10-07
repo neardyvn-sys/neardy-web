@@ -636,7 +636,7 @@ export const presenceApi = {
 
 export const uploadsApi = {
   /** Upload via API → Cloudflare R2 (multipart). */
-  file: async (file: File, kind: "image" | "video") => {
+  file: async (file: File, kind: "image" | "video" | "file" | "audio") => {
     const form = new FormData();
     form.append("kind", kind);
     form.append("file", file);
@@ -654,7 +654,7 @@ export const uploadsApi = {
   },
 
   /** Direct browser → R2 via presigned PUT (needs R2 bucket CORS). */
-  presignAndPut: async (file: File, kind: "image" | "video") => {
+  presignAndPut: async (file: File, kind: "image" | "video" | "file" | "audio") => {
     const meta = await api<{
       upload_url: string;
       public_url: string;

@@ -387,6 +387,114 @@ function MessageBubble({
               </div>
             </div>
           </div>
+        ) : type === "audio" && msg.mediaUrl ? (
+          <div
+            className="px-3.5 py-2.5 rounded-2xl flex items-center gap-3"
+            style={
+              isMe
+                ? {
+                    background: "linear-gradient(135deg, #6c63ff, #5b54e8)",
+                    color: "#fff",
+                    minWidth: "220px",
+                    ...bubbleRadiusStyle,
+                  }
+                : {
+                    backgroundColor: "#161929",
+                    color: "#e8eaf2",
+                    border: "1px solid #1e2240",
+                    minWidth: "220px",
+                    ...bubbleRadiusStyle,
+                  }
+            }
+          >
+            <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-sm flex-shrink-0">
+              🎙️
+            </div>
+            <div className="flex-1 min-w-0">
+              <audio src={msg.mediaUrl} controls className="w-full h-8" />
+              <div className="flex justify-between text-[10px] opacity-75 mt-1 select-none">
+                <span>Tin nhắn thoại</span>
+                <span>{msg.time}</span>
+              </div>
+            </div>
+          </div>
+        ) : type === "file" && msg.mediaUrl ? (
+          <a
+            href={msg.mediaUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            download
+            className="px-3.5 py-2.5 rounded-2xl flex items-center gap-3 group transition-colors cursor-pointer"
+            style={
+              isMe
+                ? {
+                    background: "linear-gradient(135deg, #6c63ff, #5b54e8)",
+                    color: "#fff",
+                    minWidth: "220px",
+                    maxWidth: "280px",
+                    ...bubbleRadiusStyle,
+                  }
+                : {
+                    backgroundColor: "#161929",
+                    color: "#e8eaf2",
+                    border: "1px solid #1e2240",
+                    minWidth: "220px",
+                    maxWidth: "280px",
+                    ...bubbleRadiusStyle,
+                  }
+            }
+          >
+            <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center text-lg flex-shrink-0">
+              📁
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold truncate group-hover:underline">
+                {msg.text.replace(/^📁\s*/, "") || "Tệp tin đính kèm"}
+              </p>
+              <p className="text-[10px] opacity-75 mt-0.5 flex items-center gap-1 select-none">
+                <span>Tải về</span>
+                <span>· {msg.time}</span>
+              </p>
+            </div>
+          </a>
+        ) : type === "location" ? (
+          <div
+            className="px-3.5 py-2.5 rounded-2xl flex flex-col gap-1.5"
+            style={
+              isMe
+                ? {
+                    background: "linear-gradient(135deg, #6c63ff, #5b54e8)",
+                    color: "#fff",
+                    minWidth: "200px",
+                    ...bubbleRadiusStyle,
+                  }
+                : {
+                    backgroundColor: "#161929",
+                    color: "#e8eaf2",
+                    border: "1px solid #1e2240",
+                    minWidth: "200px",
+                    ...bubbleRadiusStyle,
+                  }
+            }
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-base">📍</span>
+              <p className="text-xs font-bold">Vị trí đã chia sẻ</p>
+            </div>
+            {msg.text.includes("http") ? (
+              <a
+                href={msg.text.replace(/^.*?https?:\/\//, "https://")}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] underline opacity-90 hover:opacity-100 mt-0.5 break-all"
+              >
+                Mở trên Google Maps ↗
+              </a>
+            ) : (
+              <p className="text-xs">{msg.text}</p>
+            )}
+            <span className="text-[10px] opacity-75 self-end mt-0.5 select-none">{msg.time}</span>
+          </div>
         ) : isEmoji ? (
           <button
             type="button"
@@ -511,8 +619,15 @@ export default function ChatPanel({
   const bottomRef = useRef<HTMLDivElement>(null);
   const prevScrollHeightRef = useRef<number>(0);
   const isPrependingRef = useRef<boolean>(false);
-  const imageInputRef = useRef<HTMLInputElement>(null);
-  const videoInputRef = useRef<HTMLInputElement>(null);
+  const mediaInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [showGifPicker, setShowGifPicker] = useState(false);
+  const [recordingVoice, setRecordingVoice] = useState(false);
+  const [recordDuration, setRecordDuration] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordTimerRef = useRef<NodeJS.Timeout | null>(null);
   const router = useRouter();
   const [showUnmatchModal, setShowUnmatchModal] = useState(false);
   const [unmatching, setUnmatching] = useState(false);
@@ -954,19 +1069,24 @@ export default function ChatPanel({
     void sendText(emoji, true);
   };
 
-  const onPickMedia = async (file: File | undefined, kind: "image" | "video") => {
+  const onPickMedia = async (file: File | undefined, kind: "image" | "video" | "file" | "audio") => {
     if (!file) return;
     setError("");
     const localId = `local-${Date.now()}`;
     const createdAt = new Date().toISOString();
     const tempUrl = URL.createObjectURL(file);
 
+    let label = "📷 Ảnh";
+    if (kind === "video") label = "🎬 Video";
+    else if (kind === "audio") label = "🎙️ Tin nhắn thoại";
+    else if (kind === "file") label = `📁 ${file.name}`;
+
     setMessages((prev) => [
       ...prev,
       {
         id: localId,
         from: "me",
-        text: kind === "image" ? "📷 Ảnh" : "🎬 Video",
+        text: label,
         msgType: kind,
         mediaUrl: tempUrl,
         time: formatTime(createdAt),
@@ -992,7 +1112,7 @@ export default function ChatPanel({
       }
     }
 
-    setUploading(kind);
+    setUploading(kind === "image" || kind === "video" ? kind : null);
     try {
       const uploaded = await uploadsApi.file(file, kind);
       const publicUrl = uploaded.public_url;
@@ -1000,14 +1120,126 @@ export default function ChatPanel({
         type: "message.send",
         conversation_id: targetConvId,
         msg_type: kind,
-        body: kind === "image" ? "📷 Ảnh" : "🎬 Video",
+        body: label,
         media_url: publicUrl,
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Upload thất bại — kiểm tra R2 config");
+      setError(e instanceof Error ? e.message : "Upload thất bại — kiểm tra kết nối");
     } finally {
       setUploading(null);
     }
+  };
+
+  const handleSendLocation = () => {
+    if (!navigator.geolocation) {
+      setError("Trình duyệt không hỗ trợ định vị GPS");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        const mapsUrl = `https://maps.google.com/?q=${latitude},${longitude}`;
+        const text = `📍 Vị trí hiện tại: ${mapsUrl}`;
+        void sendText(text, false);
+      },
+      (err) => {
+        console.warn("Location error:", err);
+        setError("Không thể lấy vị trí hiện tại. Vui lòng bật quyền định vị GPS.");
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  };
+
+  const handleSendGif = (gifUrl: string) => {
+    setShowGifPicker(false);
+    const localId = `local-${Date.now()}`;
+    const createdAt = new Date().toISOString();
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: localId,
+        from: "me",
+        text: "🎞️ GIF",
+        msgType: "image",
+        mediaUrl: gifUrl,
+        time: formatTime(createdAt),
+        createdAt,
+      },
+    ]);
+
+    let targetConvId = currConversationId;
+    if (!targetConvId) {
+      void ensureConversation().then((id) => {
+        if (id) {
+          sendChatWs({
+            type: "message.send",
+            conversation_id: id,
+            msg_type: "image",
+            body: "🎞️ GIF",
+            media_url: gifUrl,
+          });
+        }
+      });
+      return;
+    }
+
+    sendChatWs({
+      type: "message.send",
+      conversation_id: targetConvId,
+      msg_type: "image",
+      body: "🎞️ GIF",
+      media_url: gifUrl,
+    });
+  };
+
+  const startRecordingVoice = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+      };
+      recorder.start();
+      setRecordingVoice(true);
+      setRecordDuration(0);
+      recordTimerRef.current = setInterval(() => {
+        setRecordDuration((d) => d + 1);
+      }, 1000);
+    } catch (err) {
+      console.error("Microphone access error:", err);
+      setError("Không thể truy cập microphone. Vui lòng cấp quyền.");
+    }
+  };
+
+  const stopAndSendVoice = () => {
+    if (!mediaRecorderRef.current || !recordingVoice) return;
+    if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+    const recorder = mediaRecorderRef.current;
+    recorder.onstop = () => {
+      const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+      const file = new File([blob], `voice_${Date.now()}.webm`, { type: "audio/webm" });
+      void onPickMedia(file, "audio");
+    };
+    recorder.stop();
+    setRecordingVoice(false);
+    setRecordDuration(0);
+  };
+
+  const cancelVoiceRecording = () => {
+    if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
+    setRecordingVoice(false);
+    setRecordDuration(0);
   };
 
   const notifyTyping = () => {
@@ -1545,104 +1777,311 @@ export default function ChatPanel({
         </div>
       )}
 
+      {/* GIF Picker Overlay */}
+      {showGifPicker && (
+        <div
+          className="mx-4 mb-2 p-3 rounded-2xl bg-[#111320] border border-[#1e2240] shadow-2xl slide-up"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/5">
+            <span className="text-xs font-bold text-pink-400 flex items-center gap-1.5">
+              <span>🎞️</span> Ảnh động GIF thịnh hành
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowGifPicker(false)}
+              className="w-6 h-6 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-xs text-gray-400 hover:text-white transition-colors cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto">
+            {[
+              { label: "Chào 👋", url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExOHp1bWcydHB4cTBvdDZ2NXQ2bXRycmswNnhxbDFiaG50eGJ1Znl5dSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/mG246P4l2807f7oN7v/giphy.gif" },
+              { label: "Tim ❤️", url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExeGJ0bjBwbWZ4dXkybm8wazJuc2l6c3JxcTVncmR4OXp6bXlzNmYxcyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/M90mJvfWfd5mbUuULX/giphy.gif" },
+              { label: "Haha 😂", url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNG11eW03dXRrMTMxaThxMHpvbHBiMmJ1OWxvbzM2OXA4bHpnN2V2NSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/xr9AQyxLtjlx4297Nm/giphy.gif" },
+              { label: "Wow 😮", url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExc2phbzFmY3E5c3h5czQ4OXNudTFubHBzYnZ5d2p6d2V4dmdtZmF2YiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/5VKbvrjxpVJCM/giphy.gif" },
+              { label: "OK 👍", url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExeHdybnEydmRseGR5NWtxd3h6MGZ1Ynk0Z2N6bjh2dW5jY25hM2c5eSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/111ebonMs90YLu/giphy.gif" },
+              { label: "Vỗ tay 👏", url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcnQ4Znprb3VrcXZ0YmFnbGtxanpjaHN6YWF1NHBwbXpqbzcxOWl6MSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/artj92V8o75VPL7AeQ/giphy.gif" },
+              { label: "Tỏa sáng ✨", url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcHN1a2R0MmVrcWNpMTYyNHdvcTJ1cnU1NWZ5a3U0aTJtdHNmaWF0bSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/26ufdipQqU2lhNA4g/giphy.gif" },
+              { label: "Buồn 😢", url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExMDVrdWppM3Mza2x6cGk2dDJjcmQycG53anlzd3Boc3FqZmsxd3Y2NSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/d2lcHJTG5Tscg/giphy.gif" },
+            ].map((g, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => handleSendGif(g.url)}
+                className="aspect-square rounded-xl overflow-hidden bg-black/40 border border-white/5 hover:scale-105 transition-transform cursor-pointer group relative"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={g.url} alt={g.label} className="w-full h-full object-cover" />
+                <span className="absolute bottom-0 inset-x-0 bg-black/60 text-[9px] text-white text-center py-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {g.label}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Slide-up Bottom Sheet for '+' Menu */}
+      {showAttachMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs animate-fade-in"
+            onClick={() => setShowAttachMenu(false)}
+          />
+          <div
+            className="fixed inset-x-0 bottom-0 z-50 bg-[#111320] border-t border-[#1e2240] rounded-t-3xl p-5 shadow-2xl animate-slide-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-white/5">
+              <div className="flex items-center gap-2">
+                <span className="text-base">✨</span>
+                <h3 className="text-sm font-bold text-white tracking-wide">Tùy chọn đính kèm</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAttachMenu(false)}
+                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-4 gap-3">
+              {/* 1. Tài liệu */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAttachMenu(false);
+                  fileInputRef.current?.click();
+                }}
+                className="flex flex-col items-center gap-2 p-3 rounded-2xl bg-[#161929] hover:bg-[#1f233a] border border-[#1e2240] hover:border-indigo-500/50 transition-all group cursor-pointer"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-indigo-500/15 text-indigo-400 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform shadow-md">
+                  📁
+                </div>
+                <span className="text-xs font-semibold text-gray-200">Tài liệu</span>
+              </button>
+
+              {/* 2. Vị trí */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAttachMenu(false);
+                  handleSendLocation();
+                }}
+                className="flex flex-col items-center gap-2 p-3 rounded-2xl bg-[#161929] hover:bg-[#1f233a] border border-[#1e2240] hover:border-emerald-500/50 transition-all group cursor-pointer"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform shadow-md">
+                  📍
+                </div>
+                <span className="text-xs font-semibold text-gray-200">Vị trí</span>
+              </button>
+
+              {/* 3. GIF */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAttachMenu(false);
+                  setShowGifPicker(true);
+                }}
+                className="flex flex-col items-center gap-2 p-3 rounded-2xl bg-[#161929] hover:bg-[#1f233a] border border-[#1e2240] hover:border-pink-500/50 transition-all group cursor-pointer"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-pink-500/15 text-pink-400 flex items-center justify-center text-base font-black group-hover:scale-110 transition-transform shadow-md">
+                  GIF
+                </div>
+                <span className="text-xs font-semibold text-gray-200">Ảnh GIF</span>
+              </button>
+
+              {/* 4. Voice */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAttachMenu(false);
+                  void startRecordingVoice();
+                }}
+                className="flex flex-col items-center gap-2 p-3 rounded-2xl bg-[#161929] hover:bg-[#1f233a] border border-[#1e2240] hover:border-rose-500/50 transition-all group cursor-pointer"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/15 text-rose-400 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform shadow-md">
+                  🎙️
+                </div>
+                <span className="text-xs font-semibold text-gray-200">Ghi âm</span>
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Bottom Chat Bar */}
       <div
-        className="flex-shrink-0 px-4 py-3 flex items-center gap-2"
-        style={{
-          borderTop: "1px solid #1e2240",
-          backgroundColor: "#0d0f1a",
-        }}
+        className="w-full flex-shrink-0 px-4 py-3 flex items-center gap-2 relative border-t border-[#1e2240] bg-[#0d0f1a]"
       >
+        {/* Hidden inputs */}
         <input
-          ref={imageInputRef}
+          ref={mediaInputRef}
           type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif"
+          accept="image/*,video/*"
           className="hidden"
           onChange={(e) => {
-            void onPickMedia(e.target.files?.[0], "image");
+            const file = e.target.files?.[0];
+            if (file) {
+              const isVideo = file.type.startsWith("video/");
+              void onPickMedia(file, isVideo ? "video" : "image");
+            }
             e.target.value = "";
           }}
         />
         <input
-          ref={videoInputRef}
+          ref={fileInputRef}
           type="file"
-          accept="video/mp4,video/webm,video/quicktime"
+          accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar,.7z,.tar,.gz,.csv,.json"
           className="hidden"
           onChange={(e) => {
-            void onPickMedia(e.target.files?.[0], "video");
+            const file = e.target.files?.[0];
+            if (file) {
+              void onPickMedia(file, "file");
+            }
             e.target.value = "";
           }}
         />
 
+        {/* NÚT 1: Media Gallery (Ảnh & Video) */}
         <button
           type="button"
-          onClick={() => imageInputRef.current?.click()}
-          disabled={!!uploading}
-          className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 cursor-pointer"
+          onClick={() => mediaInputRef.current?.click()}
+          disabled={!!uploading || recordingVoice}
+          className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 cursor-pointer transition-colors hover:bg-white/10 disabled:opacity-40"
           style={{ backgroundColor: "#1a1d2e", color: "#a0a8c8" }}
-          title="Gửi ảnh (R2)"
+          title="Thư viện ảnh & video"
+          aria-label="Thư viện ảnh & video"
         >
-          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <rect x="3" y="3" width="18" height="18" rx="2" />
+          <svg width="19" height="19" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <rect x="3" y="3" width="18" height="18" rx="3" />
             <circle cx="8.5" cy="8.5" r="1.5" />
             <path d="M21 15l-5-5L5 21" />
           </svg>
         </button>
+
+        {/* NÚT 2: ☺ Emoji */}
         <button
           type="button"
-          onClick={() => videoInputRef.current?.click()}
-          disabled={!!uploading}
-          className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 cursor-pointer"
-          style={{ backgroundColor: "#1a1d2e", color: "#a0a8c8" }}
-          title="Gửi video (R2)"
-        >
-          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <polygon points="23 7 16 12 23 17 23 7" />
-            <rect x="1" y="5" width="15" height="14" rx="2" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowEmoji((v) => !v)}
-          className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 text-lg cursor-pointer"
+          onClick={() => {
+            setShowEmoji((v) => !v);
+            setShowAttachMenu(false);
+            setShowGifPicker(false);
+          }}
+          disabled={recordingVoice}
+          className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 text-lg cursor-pointer transition-colors disabled:opacity-40"
           style={{
             backgroundColor: showEmoji ? "rgba(108,99,255,0.2)" : "#1a1d2e",
             color: showEmoji ? "#9b94ff" : "#a0a8c8",
           }}
-          title="Emoji"
+          title="Biểu cảm Emoji"
+          aria-label="Biểu cảm Emoji"
         >
           ☺
         </button>
 
-        <div
-          className="flex-1 flex items-center gap-2 px-4 py-2.5 rounded-2xl"
-          style={{ backgroundColor: "#111320", border: "1px solid #1e2240" }}
-        >
-          <input
-            type="text"
-            placeholder="Nhắn tin..."
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              notifyTyping();
-            }}
-            onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-            className="flex-1 bg-transparent outline-none text-sm"
-            style={{ color: "#e8eaf2" }}
-          />
-        </div>
+        {/* NÚT 3: Nút '+' mở menu (Tài liệu, Vị trí, GIF, Voice) */}
         <button
-          onClick={sendMessage}
-          disabled={!input.trim() || !!uploading}
-          className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 cursor-pointer transition-all"
-          style={{
-            background: input.trim() ? "linear-gradient(135deg, #6c63ff, #5b54e8)" : "#1a1d2e",
-            color: input.trim() ? "#fff" : "#6b74a0",
+          type="button"
+          onClick={() => {
+            setShowAttachMenu((v) => !v);
+            setShowEmoji(false);
+            setShowGifPicker(false);
           }}
+          disabled={recordingVoice}
+          className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 cursor-pointer transition-all hover:bg-white/10 disabled:opacity-40"
+          style={{
+            backgroundColor: showAttachMenu ? "rgba(108,99,255,0.25)" : "#1a1d2e",
+            color: showAttachMenu ? "#9b94ff" : "#a0a8c8",
+          }}
+          title="Đính kèm & Mở rộng (+)"
+          aria-label="Đính kèm & Mở rộng"
         >
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path d="M22 2 11 13M22 2 15 22 11 13 2 9l20-7z" />
+          <svg
+            width="20"
+            height="20"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2.2}
+            className={`transition-transform duration-200 ${showAttachMenu ? "rotate-45" : ""}`}
+          >
+            <path d="M12 4v16m8-8H4" />
           </svg>
         </button>
+
+        {/* Input or Voice Recording Bar */}
+        {recordingVoice ? (
+          <div
+            className="flex-1 flex items-center justify-between gap-3 px-4 py-2 rounded-2xl animate-fade-in"
+            style={{ backgroundColor: "rgba(239, 68, 68, 0.12)", border: "1px solid rgba(239, 68, 68, 0.3)" }}
+          >
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+              <span className="text-xs font-bold text-red-400">Đang ghi âm</span>
+              <span className="text-xs font-mono text-gray-300">
+                {Math.floor(recordDuration / 60)
+                  .toString()
+                  .padStart(2, "0")}
+                :{(recordDuration % 60).toString().padStart(2, "0")}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={cancelVoiceRecording}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors text-xs cursor-pointer"
+                title="Hủy ghi âm"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={stopAndSendVoice}
+                className="px-3 py-1 rounded-xl bg-gradient-to-r from-red-500 to-pink-500 text-white font-bold text-xs shadow-md hover:opacity-90 transition-opacity cursor-pointer"
+              >
+                Gửi voice
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div
+            className="flex-1 flex items-center gap-2 px-4 py-2.5 rounded-2xl"
+            style={{ backgroundColor: "#111320", border: "1px solid #1e2240" }}
+          >
+            <input
+              type="text"
+              placeholder="Nhắn tin..."
+              value={input}
+              onChange={(e) => {
+                setInput(e.target.value);
+                notifyTyping();
+              }}
+              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+              className="flex-1 bg-transparent outline-none text-sm"
+              style={{ color: "#e8eaf2" }}
+            />
+          </div>
+        )}
+
+        {!recordingVoice && (
+          <button
+            onClick={sendMessage}
+            disabled={!input.trim() || !!uploading}
+            className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 cursor-pointer transition-all"
+            style={{
+              background: input.trim() ? "linear-gradient(135deg, #6c63ff, #5b54e8)" : "#1a1d2e",
+              color: input.trim() ? "#fff" : "#6b74a0",
+            }}
+          >
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path d="M22 2 11 13M22 2 15 22 11 13 2 9l20-7z" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Slide-over Info Drawer */}

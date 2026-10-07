@@ -78,7 +78,7 @@ export type FilterTab = "all" | "online";
 export type Tab = "dating" | "nearby" | "messages" | "contacts" | "feed" | "profile";
 export type PermissionState = "loading" | "granted" | "denied";
 
-export type ChatMsgType = "text" | "image" | "video" | "emoji" | "call_log";
+export type ChatMsgType = "text" | "image" | "video" | "emoji" | "call_log" | "file" | "audio" | "location";
 
 export interface CallLogData {
   call_id?: string;
